@@ -1,0 +1,13 @@
+using Yacplayer.Audio; using Yacplayer.Cli; using Yacplayer.Configuration; using Yacplayer.Library; using Yacplayer.Terminal;
+namespace Yacplayer.Tests;
+public class CoreTests
+{
+    [Fact] public void CliRejectsUnknownAndBadFps() { Assert.False(Arguments.Parse(["--wat"]).IsValid); Assert.False(Arguments.Parse(["--fps", "42"]).IsValid); Assert.True(Arguments.Parse(["--help"]).Help); }
+    [Fact] public void PlaylistRepeatAndRemovalAreSafe() { var p = new Playlist(1); Assert.Null(p.Next()); p.Add(new("a")); p.Add(new("b")); Assert.Equal("a", p.Next()!.Path); Assert.Equal("b", p.Next()!.Path); Assert.Null(p.Next(true)); p.SetRepeat(RepeatMode.All); Assert.Equal("a", p.Next(true)!.Path); p.Remove(0); Assert.Single(p.Items); }
+    [Fact] public void ShuffleDoesNotRepeatWithinCycle() { var p = new Playlist(2); p.AddRange(Enumerable.Range(0, 5).Select(i => new TrackEntry(i.ToString()))); p.ToggleShuffle(); var paths = Enumerable.Range(0, 5).Select(_ => p.Next()!.Path).ToArray(); Assert.Equal(5, paths.Distinct().Count()); }
+    [Fact] public void RingWrapsAndDropsOldest() { var r = new SampleRingBuffer(4); r.Write([1,2,3,4,5]); Span<float> output = stackalloc float[4]; Assert.Equal(4, r.Read(output)); Assert.Equal(new float[]{2,3,4,5}, output.ToArray()); Assert.Equal(0, r.Count); }
+    [Fact] public void ScreenDiffIsEmptyForIdenticalFrames() { var a = new ScreenBuffer(5,2); a.Write(0,0,"hello"); var b = new ScreenBuffer(5,2); b.Write(0,0,"hello"); Assert.Equal("", b.Diff(a)); b.Write(4,1,"x"); Assert.Contains("x", b.Diff(a)); }
+    [Fact] public void ScreenDiffEmitsColorAndDetectsColorOnlyChange() { var a = new ScreenBuffer(1,1); a.Write(0,0,"█",CellColor.Green); Assert.Contains("\u001b[32m",a.Diff(null)); var b = new ScreenBuffer(1,1); b.Write(0,0,"█",CellColor.Red); var diff=b.Diff(a); Assert.Contains("\u001b[31m",diff); Assert.Contains("█",diff); }
+    [Fact] public void ScreenDiffBatchesAdjacentCells() { var screen=new ScreenBuffer(8,1); screen.Write(0,0,"████████",CellColor.Green); var diff=screen.Diff(null); Assert.Equal(1,diff.Split("\u001b[1;",StringSplitOptions.None).Length-1); }
+    [Fact] public async Task SettingsRoundTripAndValidate() { var dir = Directory.CreateTempSubdirectory(); try { var path = System.IO.Path.Combine(dir.FullName,"s.json"); var store = new SettingsStore(path); await store.SaveAsync(new(){Volume=999,Fps=7}); var loaded=await store.LoadAsync(); Assert.Equal(100,loaded.Volume); Assert.Equal(30,loaded.Fps); await File.WriteAllTextAsync(path,"{"); loaded=await store.LoadAsync(); Assert.Equal(75,loaded.Volume); } finally { dir.Delete(true); } }
+}

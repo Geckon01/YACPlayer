@@ -1,0 +1,188 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v10.0/win-x64",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v10.0": {},
+    ".NETCoreApp,Version=v10.0/win-x64": {
+      "Yacplayer/1.0.0": {
+        "dependencies": {
+          "FftFlat": "1.0.1",
+          "NAudio": "3.3.0",
+          "NAudio.Core": "3.3.0",
+          "NAudio.Wasapi": "3.3.0",
+          "z440.atl.core": "7.19.0"
+        },
+        "runtime": {
+          "Yacplayer.dll": {}
+        }
+      },
+      "FftFlat/1.0.1": {
+        "runtime": {
+          "lib/netstandard2.1/FftFlat.dll": {
+            "assemblyVersion": "1.0.1.0",
+            "fileVersion": "1.0.1.0"
+          }
+        }
+      },
+      "NAudio/3.3.0": {
+        "dependencies": {
+          "NAudio.Core": "3.3.0",
+          "NAudio.Midi": "3.3.0",
+          "NAudio.Wasapi": "3.3.0",
+          "NAudio.WinMM": "3.3.0"
+        },
+        "runtime": {
+          "lib/net9.0/NAudio.dll": {
+            "assemblyVersion": "3.3.0.0",
+            "fileVersion": "3.3.0.0"
+          }
+        }
+      },
+      "NAudio.Core/3.3.0": {
+        "dependencies": {
+          "System.Numerics.Tensors": "9.0.0"
+        },
+        "runtime": {
+          "lib/net9.0/NAudio.Core.dll": {
+            "assemblyVersion": "3.3.0.0",
+            "fileVersion": "3.3.0.0"
+          }
+        }
+      },
+      "NAudio.Midi/3.3.0": {
+        "dependencies": {
+          "NAudio.Core": "3.3.0"
+        },
+        "runtime": {
+          "lib/net9.0/NAudio.Midi.dll": {
+            "assemblyVersion": "3.3.0.0",
+            "fileVersion": "3.3.0.0"
+          }
+        }
+      },
+      "NAudio.Wasapi/3.3.0": {
+        "dependencies": {
+          "NAudio.Core": "3.3.0"
+        },
+        "runtime": {
+          "lib/net9.0/NAudio.Wasapi.dll": {
+            "assemblyVersion": "3.3.0.0",
+            "fileVersion": "3.3.0.0"
+          }
+        }
+      },
+      "NAudio.WinMM/3.3.0": {
+        "dependencies": {
+          "NAudio.Core": "3.3.0",
+          "NAudio.Midi": "3.3.0"
+        },
+        "runtime": {
+          "lib/net9.0/NAudio.WinMM.dll": {
+            "assemblyVersion": "3.3.0.0",
+            "fileVersion": "3.3.0.0"
+          }
+        }
+      },
+      "System.Numerics.Tensors/9.0.0": {
+        "runtime": {
+          "lib/net9.0/System.Numerics.Tensors.dll": {
+            "assemblyVersion": "9.0.0.0",
+            "fileVersion": "9.0.24.52809"
+          }
+        }
+      },
+      "Ude.NetStandard/1.2.0": {
+        "runtime": {
+          "lib/netstandard2.0/Ude.NetStandard.dll": {
+            "assemblyVersion": "1.0.2.0",
+            "fileVersion": "1.0.2.0"
+          }
+        }
+      },
+      "z440.atl.core/7.19.0": {
+        "dependencies": {
+          "Ude.NetStandard": "1.2.0"
+        },
+        "runtime": {
+          "lib/net6.0/ATL.dll": {
+            "assemblyVersion": "7.9.0.0",
+            "fileVersion": "7.19.0.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "Yacplayer/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "FftFlat/1.0.1": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-tWhqsB33kj9wvac59WefXsJ0XIXZWi0FxezZu9JWrwY7cRaeIq/mdEuElnh57U8QTaOgOQ286C0IPzOBCl07Ng==",
+      "path": "fftflat/1.0.1",
+      "hashPath": "fftflat.1.0.1.nupkg.sha512"
+    },
+    "NAudio/3.3.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-XSOr9vFTjY+ZxjtpD8/2MkLQLwiyd6TgdLw4GIlrBX55Gn+lDFiIkKms+d3BUftYN6sj/mrpq9HxqEYTK/ofuw==",
+      "path": "naudio/3.3.0",
+      "hashPath": "naudio.3.3.0.nupkg.sha512"
+    },
+    "NAudio.Core/3.3.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-xU3f1/5jBTfdjauhcPbjo0O1Ow+PVTPnjMo0KbV7twkWRcoY3GnVmA3mbUXxAePtJ2eUbWgteHWfFjOAvGovLg==",
+      "path": "naudio.core/3.3.0",
+      "hashPath": "naudio.core.3.3.0.nupkg.sha512"
+    },
+    "NAudio.Midi/3.3.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-ha7yD5Pf2YjBlk31T2ItNl/7rDHhksRjk3KVzxbT4NibVSO7C9IygO02U/pgbrE5CU3M48IvZArLYh7UPxR6QQ==",
+      "path": "naudio.midi/3.3.0",
+      "hashPath": "naudio.midi.3.3.0.nupkg.sha512"
+    },
+    "NAudio.Wasapi/3.3.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-wUFqmyrTHde79yzt68g/akvtVG9KDnOVFJ0Aawr07zlbwcGOQo/IWO/NTw9YJTuESl9WGgncZitx/Q7JWQaaBA==",
+      "path": "naudio.wasapi/3.3.0",
+      "hashPath": "naudio.wasapi.3.3.0.nupkg.sha512"
+    },
+    "NAudio.WinMM/3.3.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-8E5LCxXDftvBe3/O8fal8HbJt1LB3odYDGvWrRoyK7qTp2i0ELrOcr3ydDR0JIqhdi7AMXPosJFR1gssT5kcuw==",
+      "path": "naudio.winmm/3.3.0",
+      "hashPath": "naudio.winmm.3.3.0.nupkg.sha512"
+    },
+    "System.Numerics.Tensors/9.0.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-hyJB4UlpAi19Xr9AXzu2NuagKC4lPfHObNMEAA0HmqFz2rX7wKgzeYzO/jM/eBHDhnUGFFEjk5cOoJaxqg5J4A==",
+      "path": "system.numerics.tensors/9.0.0",
+      "hashPath": "system.numerics.tensors.9.0.0.nupkg.sha512"
+    },
+    "Ude.NetStandard/1.2.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-zRWpPAxBg3lNdm4UiKixTe+DFPoNid9CILggTCy/0WR2WKETe17kTWhiiIpLB2k5IEgnvA0QLfKlvd6Tvu0pzA==",
+      "path": "ude.netstandard/1.2.0",
+      "hashPath": "ude.netstandard.1.2.0.nupkg.sha512"
+    },
+    "z440.atl.core/7.19.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-mBPWqwP0pp2jmh7fbbqlv7AqKgxpbTBWE8X6kYPjlNUxQsH1gU8FplPEyltKdRD7IbS/HQbZOCBsp+02mTcv6Q==",
+      "path": "z440.atl.core/7.19.0",
+      "hashPath": "z440.atl.core.7.19.0.nupkg.sha512"
+    }
+  }
+}
