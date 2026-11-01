@@ -1,70 +1,228 @@
 # Yacplayer
 
-Yacplayer is a keyboard-first Windows terminal music player. It uses real Windows WASAPI shared-mode playback, local metadata, a bounded PCM tap, Hann-windowed FFT visualization, and a custom ANSI/VT screen-diff renderer. It has no GUI, webview, database, telemetry, or network feature.
+![Иконка Yacplayer](assets/Yacplayer_icon.png)
+
+Yacplayer — локальный музыкальный плеер для Windows с полноэкранным терминальным интерфейсом. Он воспроизводит аудио через WASAPI shared mode, показывает очередь и двухпанельный файловый браузер, строит FFT-спектр из реально декодированного PCM и управляется с клавиатуры.
+
+> [!IMPORTANT]
+> **Уведомление об AI-generated code:** проект содержит код, созданный и изменённый при помощи искусственного интеллекта. Такой код может содержать дефекты, уязвимости и неверные предположения; перед production-использованием необходимы человеческое ревью и тестирование. Уведомление не изменяет лицензию MIT и отказ от гарантий.
+
+## Текущее состояние
+
+Работает:
+
+- воспроизведение через NAudio 3.3 и `WasapiPlayer` в shared mode;
+- play, pause/resume, stop, seek ±5 секунд, next/previous, auto-next;
+- громкость 0–100% и mute;
+- очередь, удаление без удаления файла, repeat Off/All/One и shuffle bag;
+- запуск с файлом или каталогом;
+- встроенный Midnight Commander-подобный браузер: каталоги, `[..]`, список дисков `This PC`, добавление файла/каталога;
+- адаптивный ANSI/VT-интерфейс с цветными панелями и diff-rendering;
+- FFT-визуализатор с Hann window, логарифмическими полосами, сглаживанием и цветовой шкалой;
+- JSON-настройки в профиле пользователя;
+- CLI, Release publish и установщик Inno Setup;
+- встроенная многоразмерная Windows-иконка.
+
+Текущие ограничения:
+
+- отдельная визуализация `Waveform` пока не реализована: клавиша `V` переключает enum, но рисуется только `Spectrum`; режим `Off` отключает спектр;
+- флаг fullscreen-визуализатора переключается клавишей `H` и сохраняется, но отдельная fullscreen-компоновка пока не отрисовывается;
+- `MetadataService` на ATL реализован и протестирован изолированно, но ещё не подключён к загрузке элементов очереди; в UI обычно используется имя файла, `Unknown artist`, а bitrate не вычисляется;
+- repeat/shuffle сохраняются в JSON, но при старте пока не применяются обратно к новому экземпляру `Playlist`;
+- интерактивный поиск очереди, mouse input, OGG и Opus отсутствуют;
+- WASAPI и реальные кодеки требуют ручной проверки на машине со звуковым устройством.
+
+## Системные требования
+
+- Windows 10 build 17763 или новее, Windows 11;
+- архитектура x64;
+- [.NET 10 Runtime x64](https://dotnet.microsoft.com/download/dotnet/10.0/runtime) для framework-dependent сборки;
+- Windows Terminal рекомендуется из-за поддержки VT, Unicode и ANSI-цветов;
+- .NET 10 SDK требуется только для сборки из исходников.
+
+## Быстрый старт
+
+### Установщик
+
+Запустите:
 
 ```text
- Yacplayer  Playing  Vol 75%  Repeat Off  Shuffle off
- ────────────────────────────────────────────────────
- Unknown artist — track
- 01:14 [████████████████░░░░░░░░░░░░░░░] 03:42
-       █   █ ███   █
-   █   █ █ █ ███ █ █
- >▶    1  track
+artifacts\installer\Yacplayer-1.0.0-win-x64-setup.exe
 ```
 
-## Requirements and use
+Установка выполняется для текущего пользователя в `%LOCALAPPDATA%\Programs\Yacplayer`, не требует прав администратора и может создать ярлык на рабочем столе.
 
-Windows 10/11 x64 and the .NET 10 SDK are required to build. From the repository root:
+### Запуск опубликованной версии
+
+```powershell
+.\artifacts\publish\Yacplayer.exe
+.\artifacts\publish\Yacplayer.exe "C:\Music\track.mp3"
+.\artifacts\publish\Yacplayer.exe "C:\Music" --recursive
+```
+
+Без аргументов сразу открывается файловый браузер в последнем доступном каталоге либо в текущей рабочей папке.
+
+### Запуск из исходников
+
+```powershell
+dotnet restore Yacplayer.sln
+dotnet run --project src/Yacplayer --
+dotnet run --project src/Yacplayer -- "C:\Music"
+dotnet run --project src/Yacplayer -- "C:\Music\track.mp3" --fps 60
+```
+
+## CLI
+
+```text
+yacplayer [path] [--recursive] [--fps 30|60] [--no-visualizer]
+```
+
+| Параметр | Назначение |
+|---|---|
+| `path` | Один аудиофайл или каталог |
+| `-r`, `--recursive` | Рекурсивно сканировать каталог; reparse points пропускаются |
+| `--fps 30\|60` | Частота UI; другие значения отклоняются |
+| `--no-visualizer` | Отключить спектр на текущий запуск |
+| `-h`, `--help` | Показать справку без инициализации аудио/TUI |
+| `--version` | Показать версию без инициализации аудио/TUI |
+
+Коды выхода:
+
+- `0` — нормальный выход;
+- `2` — неизвестный или некорректный аргумент;
+- `3` — отсутствующий стартовый путь или критическая ошибка запуска.
+
+Если stdin/stdout перенаправлены, интерактивный TUI не запускается: программа сообщает число загруженных треков и завершает работу.
+
+## Управление плеером
+
+| Клавиша | Действие |
+|---|---|
+| `Space` | Pause/resume |
+| `X` | Stop и сброс позиции |
+| `N` / `P` | Следующий / предыдущий трек |
+| `Left` / `Right` | Seek −5 / +5 секунд |
+| `+` / `-` | Громкость +5 / −5 процентных пунктов |
+| `M` | Mute/unmute |
+| `Up` / `Down` | Выбор элемента очереди |
+| `Enter` | Воспроизвести выбранный элемент очереди |
+| `Delete` | Удалить элемент только из очереди |
+| `S` | Shuffle on/off |
+| `R` | Repeat Off → All → One |
+| `V` | Spectrum → Waveform → Off; Waveform пока не рисуется |
+| `H` | Переключить сохранённый fullscreen-флаг; отдельный layout пока не реализован |
+| `F` | Открыть файловый браузер |
+| `?` | Открыть встроенную справку |
+| `Q` | Корректно завершить работу |
+
+## Управление файловым браузером
+
+Левая панель содержит каталоги и поддерживаемые аудиофайлы, правая — текущую очередь. Каталоги сортируются первыми, затем имена сортируются без учёта регистра.
+
+| Клавиша | Действие |
+|---|---|
+| `Up` / `Down` | Переместить выбор |
+| `Enter` | Войти в каталог; для файла — добавить его при необходимости, запустить и закрыть браузер |
+| `Backspace` | Перейти в родительский каталог |
+| `Enter` на `[..]` | Перейти в родительский каталог |
+| `A` | Добавить выбранный файл или содержимое каталога без запуска |
+| `F` / `Esc` | Закрыть браузер |
+| `Q` | Завершить приложение |
+
+При выходе выше корня диска показывается виртуальный список `This PC` со всеми готовыми дисками. Недоступные каталоги не завершают приложение и отображаются как пустые.
+
+## Форматы
+
+| Формат | Текущий статус |
+|---|---|
+| WAV PCM | Поддерживаемый базовый формат |
+| MP3 | Поддерживается на стандартной Windows через NAudio/Media Foundation |
+| M4A, AAC | Зависит от доступного Media Foundation codec |
+| WMA | Зависит от системного декодера |
+| FLAC | Best effort через системные возможности Windows |
+| OGG, Opus | Не поддерживаются текущей версией |
+
+Расширение файла используется только для показа в браузере. Реальная возможность воспроизведения определяется декодером; ошибка кодека обрабатывается без падения приложения. FFmpeg и внешние процессы не используются.
+
+## Конфигурация
+
+Файл: `%LOCALAPPDATA%\Yacplayer\settings.json`.
+
+```json
+{
+  "Version": 1,
+  "Volume": 75,
+  "Muted": false,
+  "Fps": 30,
+  "FftSize": 2048,
+  "VisualizerMode": "Spectrum",
+  "FullscreenVisualizer": false,
+  "RepeatMode": "Off",
+  "Shuffle": false,
+  "Recursive": false,
+  "LastDirectory": ""
+}
+```
+
+Проверяются диапазон громкости, FPS (`30`/`60`), FFT size (`2048`/`4096`), enum-значения и существование последнего каталога. Повреждённый JSON перемещается в `settings.json.bad`, затем используются значения по умолчанию. Сохранение выполняется через `settings.json.tmp` и замену целевого файла. CLI-флаги имеют приоритет в текущем запуске.
+
+## Сборка и тесты
 
 ```powershell
 dotnet restore Yacplayer.sln
 dotnet build Yacplayer.sln -c Release
 dotnet test Yacplayer.sln -c Release
-dotnet run --project src/Yacplayer -- "C:\Music"
-dotnet run --project src/Yacplayer -- "C:\Music\track.mp3" --fps 60
 ```
 
-Options are `--recursive`, `--fps 30|60`, `--no-visualizer`, `--help`, and `--version`. An unknown/malformed option exits with code 2; an absent startup path exits with code 3. Help and version never initialize audio or enter the alternate screen.
+Текущий набор содержит 11 unit-тестов без требования аудиоустройства: CLI, playlist, shuffle, ring buffer, ANSI diff/styles/batching, settings, FFT, metadata fallback и browser filtering/sorting.
 
-## Keys
+Публикация framework-dependent win-x64:
 
-| Key | Action |
-|---|---|
-| Space / X | pause-resume / stop |
-| N / P | next / previous |
-| Left / Right | seek -5/+5 seconds |
-| + / - / M | volume +5/-5 / mute |
-| Up / Down / Enter | select / play queue item |
-| Delete | remove queue item; never deletes the file |
-| S / R | shuffle / repeat Off-All-One |
-| V / H | Spectrum-Waveform-Off / fullscreen mode |
-| F / Esc | open / close the file browser |
-| Enter / Backspace | open file or directory / parent directory |
-| A | append the selected file or folder to the queue |
-| ? / Esc / Q | help / close overlay / quit |
+```powershell
+dotnet publish src/Yacplayer/Yacplayer.csproj `
+  -c Release -r win-x64 --self-contained false `
+  -o artifacts/publish
+```
 
-With no path argument, Yacplayer opens a two-panel, Midnight Commander-style browser in the last valid directory or the current directory. The left panel contains directories and supported audio files; the right panel shows the queue. The always-visible `[..]` entry and Backspace both go to the parent. Going above a drive root opens the `This PC` drive list. Enter opens a directory or adds and plays a file; A appends the selected file or folder without starting playback. Recursive folder addition skips directory reparse points.
+Сборка установщика Inno Setup 6:
 
-## Formats and audio
+```powershell
+& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\Yacplayer.iss
+```
 
-PCM WAV and standard Windows MP3 are the supported baseline. M4A, AAC, WMA, and FLAC are offered through NAudio's Windows Media Foundation reader and therefore depend on installed OS codecs. OGG and Opus are deliberately not advertised as playable. ATL reads metadata only; it is not a decoder. Decode errors are nonfatal and shown in the status line.
+Результат: `artifacts\installer\Yacplayer-1.0.0-win-x64-setup.exe`.
 
-The audio callback reads decoded floating-point PCM, downmixes it to mono, and writes into a bounded overwrite-oldest SPSC-style ring. A UI-side analyzer applies a Hann window, reuses FFT buffers, maps bins into logarithmic bands, and drops incomplete windows. Rendering and metadata never execute in the audio callback. Audio continuity takes priority over visualization freshness.
+## Структура репозитория
 
-## Configuration
+```text
+src/Yacplayer/                  приложение
+  Audio/                       NAudio, WASAPI, PCM tap, ring buffer
+  Cli/                         разбор аргументов и help
+  Configuration/               модель и JSON-хранилище настроек
+  Dsp/                         FFT и логарифмические полосы
+  Library/                     очередь, browser, metadata model/service
+  Terminal/                    alternate screen, cell buffer, ANSI diff
+tests/Yacplayer.Tests/          xUnit-тесты чистой логики
+assets/                         PNG и многоразмерная ICO-иконка
+installer/Yacplayer.iss         Inno Setup 6
+docs/ARCHITECTURE.md            полное описание архитектуры
+artifacts/publish/              framework-dependent publish
+artifacts/installer/            собранный setup
+```
 
-Settings are valid JSON at `%LOCALAPPDATA%\Yacplayer\settings.json`. Volume, mute, FPS, FFT size, visual mode, repeat/shuffle, recursion and last directory persist. CLI flags override settings for the current invocation. Values are validated; malformed JSON is moved to `settings.json.bad`; writes use a temporary file and atomic replace/move.
+Подробная инженерная документация: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-## Troubleshooting and limitations
+## Диагностика
 
-- No audio device: `--help` and `--version` still work; playback reports the WASAPI error and the TUI remains usable.
-- Garbled display: use Windows Terminal or enable Windows VT processing and a Unicode-capable font. `Q`/Ctrl+C restores the alternate screen and cursor.
-- Codec failure: verify the file in a Media Foundation-capable Windows player. No FFmpeg fallback is used.
-- This release is Windows-only, keyboard-only, and does not support OGG/Opus or mouse input. Interactive queue search is not yet implemented.
-- Audio-device behavior must be manually checked with a real WAV/MP3: play, pause, seek, volume/mute, rapid next/previous, repeat modes, resize, then Q/Ctrl+C.
+- **Пустой экран или плохие цвета:** используйте Windows Terminal, UTF-8 и шрифт с символом `█`.
+- **Нет звука:** проверьте default output device; Yacplayer использует WASAPI shared mode и latency 100 ms.
+- **Файл виден, но не играет:** наличие расширения в browser allowlist не гарантирует наличие системного codec.
+- **Старая иконка EXE:** Windows может кэшировать значки; переименуйте файл или перезапустите Explorer.
+- **Настройки не загружаются:** проверьте `settings.json.bad` рядом с конфигурацией.
+- **Терминал остался в alternate screen:** штатные `Q` и Ctrl+C вызывают cleanup; после аварийного завершения выполните сброс терминала или откройте новую вкладку.
 
-For profiling, run `dotnet-counters monitor --process-id <pid>` or capture `dotnet-trace`; neither tool is a runtime dependency.
+Профилирование возможно через `dotnet-counters` и `dotnet-trace`; runtime-зависимостями проекта они не являются.
 
-## Architecture
+## Лицензии
 
-`Audio` owns decode/output and PCM tapping; `Dsp` owns FFT; `Library` owns scanning, metadata, and deterministic playlist state; `Terminal` owns sanitized buffers/diffs; `Configuration` owns validated atomic JSON; `App` is the single nonblocking UI loop. Tests synthesize inputs and require no sound device.
+Собственный код распространяется по MIT: [LICENSE](LICENSE). Сведения о NAudio, FftFlat, ATL и test-only пакетах: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
