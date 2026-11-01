@@ -2,8 +2,9 @@ using System.Text;
 
 namespace Yacplayer.Terminal;
 
-public enum CellColor { Default = 39, Red = 31, Yellow = 33, Green = 32, Blue = 34, Cyan = 36, White = 37 }
-public readonly record struct Cell(char Character, CellColor Color);
+public enum CellColor { Black = 30, Red = 31, Green = 32, Yellow = 33, Blue = 34, Cyan = 36, White = 37, Default = 39, BrightGreen = 92, BrightWhite = 97 }
+public enum CellBackground { Default = 49, Black = 40, Green = 42, BrightGreen = 102 }
+public readonly record struct Cell(char Character, CellColor Color, CellBackground Background = CellBackground.Default, bool Bold = false);
 
 public sealed class ScreenBuffer
 {
@@ -16,14 +17,14 @@ public sealed class ScreenBuffer
     public int Width { get; }
     public int Height { get; }
     public void Clear() => Array.Fill(_cells, new Cell(' ', CellColor.Default));
-    public void Write(int x, int y, string? text, CellColor color = CellColor.Default)
+    public void Write(int x, int y, string? text, CellColor color = CellColor.Default, CellBackground background = CellBackground.Default, bool bold = false)
     {
         if (text is null || y < 0 || y >= Height) return;
         foreach (var raw in text)
         {
             var ch = raw is '\u001b' or '\r' or '\n' or '\t' || char.IsControl(raw) ? ' ' : raw;
             if (x >= Width) break;
-            if (x >= 0) _cells[y * Width + x] = new Cell(ch, color);
+            if (x >= 0) _cells[y * Width + x] = new Cell(ch, color, background, bold);
             x++;
         }
     }
@@ -32,7 +33,7 @@ public sealed class ScreenBuffer
     public string Diff(ScreenBuffer? previous)
     {
         var output = new StringBuilder();
-        var activeColor = CellColor.Default;
+        var activeColor = CellColor.Default; var activeBackground = CellBackground.Default; var activeBold = false;
         var sameSize = previous is not null && previous.Width == Width && previous.Height == Height;
         for (var y = 0; y < Height; y++)
         {
@@ -44,8 +45,10 @@ public sealed class ScreenBuffer
 
                 output.Append($"\u001b[{y + 1};{x + 1}H");
                 if (cell.Color != activeColor) { output.Append($"\u001b[{(int)cell.Color}m"); activeColor = cell.Color; }
+                if (cell.Background != activeBackground) { output.Append($"\u001b[{(int)cell.Background}m"); activeBackground = cell.Background; }
+                if (cell.Bold != activeBold) { output.Append(cell.Bold ? "\u001b[1m" : "\u001b[22m"); activeBold = cell.Bold; }
 
-                var runColor = cell.Color;
+                var runStyle = cell;
                 do
                 {
                     output.Append(cell.Character);
@@ -53,10 +56,12 @@ public sealed class ScreenBuffer
                     if (x >= Width) break;
                     cell = GetCell(x, y);
                 }
-                while (cell.Color == runColor && (!sameSize || previous!.GetCell(x, y) != cell));
+                while (SameStyle(cell, runStyle) && (!sameSize || previous!.GetCell(x, y) != cell));
             }
         }
-        if (activeColor != CellColor.Default) output.Append("\u001b[39m");
+        if (activeColor != CellColor.Default || activeBackground != CellBackground.Default || activeBold) output.Append("\u001b[0m");
         return output.ToString();
     }
+
+    private static bool SameStyle(Cell left, Cell right) => left.Color == right.Color && left.Background == right.Background && left.Bold == right.Bold;
 }

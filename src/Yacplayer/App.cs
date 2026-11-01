@@ -183,46 +183,67 @@ public sealed class App(Arguments arguments)
     private ScreenBuffer Draw(int width, int height, PlaybackSnapshot playback, float[] bands)
     {
         var screen = new ScreenBuffer(width, height);
-        screen.Write(0, 0, $" Yacplayer  {playback.State}  Vol {playback.Volume}%{(playback.Muted ? " MUTE" : "")}  Repeat {_playlist.Repeat}  Shuffle {(_playlist.Shuffle ? "on" : "off")}");
-        screen.Write(0, 1, new string('-', width));
+        DrawBox(screen, 0, 0, width - 1, 2, " Yacplayer ", CellColor.Green);
+        var state = playback.State == PlaybackState.Playing ? "> PLAYING" : playback.State.ToString().ToUpperInvariant();
+        var volumeBlocks = Math.Clamp(playback.Volume / 10, 0, 10);
+        var header = $"{state}  |  Vol {playback.Volume,3}% {new string('█', volumeBlocks)}{new string('.', 10 - volumeBlocks)}  |  Repeat: {_playlist.Repeat}  |  Shuffle: {(_playlist.Shuffle ? "On" : "Off")}  |  Output: WASAPI";
+        screen.Write(14, 1, Fit(header, Math.Max(1, width - 16)), CellColor.White, bold: true);
         if (_browserVisible)
         {
             DrawBrowser(screen, width, height);
             return screen;
         }
-        var current = _playlist.CurrentIndex is int index ? _playlist.Items[index] : null;
-        screen.Write(1, 2, current is null ? "No track" : $"{current.Artist} - {current.Title}");
-        var duration = playback.Duration.TotalSeconds;
-        var ratio = duration <= 0 ? 0 : Math.Clamp(playback.Position.TotalSeconds / duration, 0, 1);
-        var barWidth = Math.Max(1, width - 22);
-        var filled = Math.Clamp((int)(ratio * barWidth), 0, barWidth);
-        var progressPrefix = $"{playback.Position:mm\\:ss} [";
-        screen.Write(1, 3, progressPrefix);
-        screen.Write(1 + progressPrefix.Length, 3, new string('█', filled), CellColor.Green);
-        screen.Write(1 + progressPrefix.Length + filled, 3, $"{new string('.', barWidth - filled)}] {playback.Duration:mm\\:ss}");
 
-        var visualTop = 5;
-        var visualBottom = height - 3;
-        var visualHeight = Math.Max(1, visualBottom - visualTop + 1);
-        if (_settings.VisualizerMode == VisualizerMode.Spectrum)
+        var current = _playlist.CurrentIndex is int index ? _playlist.Items[index] : null;
+
+        if (width < 90 || height < 22)
         {
-            for (var x = 0; x < width; x++)
+            DrawBox(screen, 0, 3, width - 1, 7, " Now Playing ", CellColor.Green);
+            screen.Write(2, 4, Fit(current is null ? "No track selected" : current.Title, width - 4), CellColor.White, bold: true);
+            screen.Write(2, 5, Fit(current?.Artist ?? "Select a track with F", width - 4), CellColor.Green);
+            DrawProgress(screen, 2, 6, width - 4, playback);
+            DrawBox(screen, 0, 8, width - 1, height - 2, " Spectrum (FFT) ", CellColor.Green);
+            DrawSpectrum(screen, 1, 10, width - 2, Math.Max(1, height - 12), bands);
+        }
+        else
+        {
+            var queueLeft = Math.Max(68, width * 72 / 100);
+            var nowBottom = 9;
+            var infoTop = height - 9;
+            DrawBox(screen, 0, 3, queueLeft - 1, nowBottom, " Now Playing ", CellColor.Green);
+            screen.Write(3, 5, Fit(current is null ? "No track selected" : current.Title, queueLeft - 6), CellColor.White, bold: true);
+            screen.Write(3, 6, Fit(current?.Artist ?? "Open the file browser with F", queueLeft - 6), CellColor.Green);
+            screen.Write(3, 7, $"{Path.GetExtension(playback.Path ?? "").TrimStart('.').ToUpperInvariant(),-6} | {playback.SampleRate / 1000d:0.0} kHz | {playback.Channels} ch | {playback.Duration:mm\\:ss}");
+            DrawProgress(screen, 3, 8, queueLeft - 6, playback);
+
+            DrawBox(screen, queueLeft, 3, width - 1, height - 2, $" Queue ({_playlist.Items.Count}) ", CellColor.Green);
+            var queueRows = Math.Max(1, height - 8);
+            for (var row = 0; row < queueRows && row < _playlist.Items.Count; row++)
             {
-                var position = x * (bands.Length - 1d) / Math.Max(1, width - 1);
-                var left = (int)position;
-                var right = Math.Min(bands.Length - 1, left + 1);
-                var amplitude = bands[left] * (1 - (position - left)) + bands[right] * (position - left);
-                var barHeight = Math.Clamp((int)Math.Round(amplitude * visualHeight), 0, visualHeight);
-                for (var level = 0; level < barHeight; level++)
-                {
-                    var heightRatio = level / (double)Math.Max(1, visualHeight - 1);
-                    var color = heightRatio switch { >= 0.72 => CellColor.Red, >= 0.42 => CellColor.Yellow, _ => CellColor.Green };
-                    screen.Write(x, visualBottom - level, "█", color);
-                }
+                var item = _playlist.Items[row]; var active = row == _playlist.CurrentIndex; var selected = row == _playlist.SelectedIndex;
+                var text = $"{(active ? '>' : ' ')} {row + 1,2}. {item.Title}";
+                screen.Write(queueLeft + 2, 5 + row, Fit(text, width - queueLeft - 4), active ? CellColor.Black : selected ? CellColor.Yellow : CellColor.Default, active ? CellBackground.Green : CellBackground.Default, active);
             }
+
+            DrawBox(screen, 0, 10, queueLeft - 1, infoTop - 1, " Spectrum (FFT) ", CellColor.Green);
+            screen.Write(Math.Max(2, queueLeft - 33), 11, $"40 Hz - 18 kHz | {_settings.FftSize} bins", CellColor.Cyan);
+            DrawSpectrum(screen, 1, 12, queueLeft - 2, Math.Max(1, infoTop - 12), bands);
+
+            var middle = queueLeft / 2;
+            DrawBox(screen, 0, infoTop, middle - 1, height - 2, " Playback ", CellColor.Green);
+            screen.Write(3, infoTop + 2, $"Volume   : {playback.Volume}% {new string('█', Math.Clamp(playback.Volume / 10, 0, 10))}", CellColor.Green);
+            screen.Write(3, infoTop + 3, $"Repeat   : {_playlist.Repeat}");
+            screen.Write(3, infoTop + 4, $"Shuffle  : {(_playlist.Shuffle ? "On" : "Off")}");
+            screen.Write(3, infoTop + 5, $"Output   : WASAPI shared");
+            DrawBox(screen, middle, infoTop, queueLeft - 1, height - 2, " Audio Info ", CellColor.Green);
+            screen.Write(middle + 3, infoTop + 2, $"Format      : {Path.GetExtension(playback.Path ?? "").TrimStart('.').ToUpperInvariant()}", CellColor.Green);
+            screen.Write(middle + 3, infoTop + 3, $"Sample rate : {playback.SampleRate:N0} Hz", CellColor.Green);
+            screen.Write(middle + 3, infoTop + 4, $"Channels    : {playback.Channels}", CellColor.Green);
+            screen.Write(middle + 3, infoTop + 5, $"Duration    : {playback.Duration:mm\\:ss}", CellColor.Green);
         }
 
-        screen.Write(0, height - 1, _help ? "Esc close help" : $" {_message}  |  ? help  Q quit");
+        var footer = _help ? "Esc Close help" : "Hotkeys: [Space] Play/Pause | [Left/Right] Seek | [Up/Down] Select | [F] Files | [S] Shuffle | [R] Repeat | [Q] Quit | [?] Help";
+        screen.Write(0, height - 1, Fit(footer, width), CellColor.Green, bold: true);
         if (_help)
         {
             for (var y = 2; y < height - 2; y++) screen.Write(2, y, new string(' ', Math.Max(0, width - 4)));
@@ -233,9 +254,39 @@ public sealed class App(Arguments arguments)
         return screen;
     }
 
+    private static void DrawProgress(ScreenBuffer screen, int x, int y, int width, PlaybackSnapshot playback)
+    {
+        var duration = playback.Duration.TotalSeconds;
+        var ratio = duration <= 0 ? 0 : Math.Clamp(playback.Position.TotalSeconds / duration, 0, 1);
+        var barWidth = Math.Max(1, width - 13); var filled = Math.Clamp((int)(ratio * barWidth), 0, barWidth);
+        screen.Write(x, y, $"{playback.Position:mm\\:ss} ");
+        screen.Write(x + 6, y, new string('█', filled), CellColor.Green);
+        screen.Write(x + 6 + filled, y, new string('·', barWidth - filled));
+        screen.Write(x + width - 5, y, $"{playback.Duration:mm\\:ss}");
+    }
+
+    private void DrawSpectrum(ScreenBuffer screen, int left, int top, int width, int height, float[] bands)
+    {
+        if (_settings.VisualizerMode != VisualizerMode.Spectrum || width <= 0 || height <= 0) return;
+        var bottom = top + height - 1;
+        for (var x = 0; x < width; x++)
+        {
+            var position = x * (bands.Length - 1d) / Math.Max(1, width - 1); var band = (int)position;
+            var next = Math.Min(bands.Length - 1, band + 1); var amplitude = bands[band] * (1 - (position - band)) + bands[next] * (position - band);
+            var barHeight = Math.Clamp((int)Math.Round(amplitude * height), 0, height);
+            for (var level = 0; level < barHeight; level++)
+            {
+                var ratio = level / (double)Math.Max(1, height - 1);
+                var color = ratio switch { >= .72 => CellColor.Red, >= .42 => CellColor.Yellow, _ => CellColor.Green };
+                screen.Write(left + x, bottom - level, "█", color);
+            }
+            if (barHeight > 0) screen.Write(left + x, Math.Max(top, bottom - barHeight), "-", CellColor.Yellow, bold: true);
+        }
+    }
+
     private void DrawBrowser(ScreenBuffer screen, int width, int height)
     {
-        var top = 2; var bottom = height - 3;
+        var top = 3; var bottom = height - 3;
         var left = 0; var split = width >= 70 ? width * 2 / 3 : width; var right = width - 1;
         DrawBox(screen, left, top, split - 1, bottom, " FILES ");
         if (split < width) DrawBox(screen, split, top, right, bottom, " QUEUE ");
@@ -278,13 +329,15 @@ public sealed class App(Arguments arguments)
         screen.Write(1, height - 1, Fit(_message, width - 2));
     }
 
-    private static void DrawBox(ScreenBuffer screen, int left, int top, int right, int bottom, string title)
+    private static void DrawBox(ScreenBuffer screen, int left, int top, int right, int bottom, string title, CellColor color = CellColor.Cyan)
     {
         if (right - left < 4 || bottom - top < 2) return;
-        screen.Write(left, top, "+" + new string('-', right - left - 1) + "+", CellColor.Cyan);
-        screen.Write(left + 2, top, title, CellColor.Yellow);
-        for (var y = top + 1; y < bottom; y++) { screen.Write(left, y, "|", CellColor.Cyan); screen.Write(right, y, "|", CellColor.Cyan); }
-        screen.Write(left, bottom, "+" + new string('-', right - left - 1) + "+", CellColor.Cyan);
+        var borderColor = color == CellColor.Green ? CellColor.BrightGreen : color;
+        screen.Write(left, top, "+" + new string('-', right - left - 1) + "+", borderColor);
+        if (color == CellColor.Green) screen.Write(left + 2, top, title, CellColor.Black, CellBackground.BrightGreen, true);
+        else screen.Write(left + 2, top, title, CellColor.Yellow, bold: true);
+        for (var y = top + 1; y < bottom; y++) { screen.Write(left, y, "|", borderColor); screen.Write(right, y, "|", borderColor); }
+        screen.Write(left, bottom, "+" + new string('-', right - left - 1) + "+", borderColor);
     }
 
     private static string Fit(string value, int width)
