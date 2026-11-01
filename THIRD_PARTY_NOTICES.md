@@ -1,5 +1,7 @@
 # Third-party notices
 
+**Language:** English · [Русский](THIRD_PARTY_NOTICES.ru.md)
+
 Yacplayer uses these unmodified NuGet libraries. Consult the linked package/source distributions for full notices.
 
 - NAudio, NAudio.Core and NAudio.Wasapi 3.3.0 — MIT, copyright Mark Heath and contributors. The `NAudio` meta-package is required by NAudio 3.3 for `AudioFileReader` and the Windows Media Foundation decoder stack.

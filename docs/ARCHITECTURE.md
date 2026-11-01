@@ -1,92 +1,94 @@
-# Архитектура Yacplayer
+# Yacplayer Architecture
 
-## 1. Назначение документа
+**Language:** English · [Русский](ARCHITECTURE.ru.md) · [README](../README.md)
 
-Документ описывает фактически реализованную архитектуру Yacplayer 1.0 на уровне компонентов, данных, потоков исполнения, состояний, resource ownership и build/release pipeline. Он не является списком желаемых функций: отличия текущей реализации от целевой модели перечислены в разделе «Ограничения и технический долг».
+## 1. Purpose and scope
 
-Целевая платформа приложения — Windows x64, `.NET 10`, `net10.0-windows`. Shipping unit — один managed executable с framework-dependent DLL-зависимостями и опциональным Inno Setup installer.
+This document describes the architecture that is actually implemented in Yacplayer 1.0: components, data flow, execution contexts, state, resource ownership, build/release flow, known limitations, and extension points. It is not an aspirational feature list; gaps between the implementation and the intended design are listed explicitly under “Limitations and technical debt.”
 
-## 2. Архитектурные принципы
+The target is Windows x64, `.NET 10`, and `net10.0-windows`. The application ships as one managed executable with framework-dependent DLLs and an optional Inno Setup installer.
 
-1. **Один процесс, один shipping project.** Нет сервисов, IPC, базы данных и plugin host.
-2. **Audio path отделён от UI.** Декодирование и выдача PCM инициируются NAudio/WASAPI; FFT и ANSI-rendering не выполняются внутри audio callback.
-3. **Bounded data flow.** PCM tap пишет в кольцевой буфер фиксированного размера. При перегрузке старые samples вытесняются, а воспроизведение не ждёт визуализатор.
-4. **UI управляет состоянием.** `App` содержит event loop, keyboard dispatch, browser state, playlist orchestration, DSP sampling и layout.
-5. **Доменная логика тестируема без устройства.** Playlist, ring buffer, FFT, settings, browser filtering и terminal diff не требуют WASAPI.
-6. **Terminal output строится декларативно.** Каждый кадр сначала формируется в `ScreenBuffer`, затем сравнивается с предыдущим и превращается в минимизированный ANSI diff.
-7. **Ошибки окружения не должны повреждать терминал.** `TerminalSession.Dispose` восстанавливает экран, цвета и курсор; Ctrl+C переводится в cancellation.
+## 2. Architectural principles
 
-## 3. Контекст и зависимости
+1. **One process and one shipping project.** There are no services, IPC endpoints, databases, or plugin hosts.
+2. **Audio is isolated from presentation work.** NAudio/WASAPI requests decoded PCM; FFT, metadata, JSON, and terminal rendering do not execute in the audio callback.
+3. **Bounded sample transport.** The PCM tap writes to a fixed-size ring. Under overload, stale visualization samples are discarded instead of blocking playback.
+4. **UI-owned application state.** `App` currently owns the event loop, keyboard routing, browser state, playlist orchestration, DSP sampling, and layout.
+5. **Device-independent domain tests.** Playlist, ring, FFT, settings, browser filtering, and terminal diff logic can run without WASAPI hardware.
+6. **Declarative terminal frames.** A complete `ScreenBuffer` is built first and compared with the preceding frame to produce an ANSI diff.
+7. **Deterministic terminal restoration.** `TerminalSession.Dispose` restores colors, the cursor, and the primary screen; Ctrl+C becomes cooperative cancellation.
+
+## 3. System context
 
 ```mermaid
 flowchart LR
-    User["Клавиатура / пользователь"] --> App["App: event loop"]
-    Files["Локальная файловая система"] --> Browser["FileBrowser"]
+    User["Keyboard / user"] --> App["App event loop"]
+    FS["Local filesystem"] --> Browser["FileBrowser"]
     Browser --> App
     App --> Playlist["Playlist"]
     App --> Audio["AudioEngine"]
-    Audio --> NAudio["NAudio AudioFileReader"]
-    NAudio --> WASAPI["Windows WASAPI shared"]
-    NAudio --> Tap["PcmTapSampleProvider"]
+    Audio --> Reader["NAudio AudioFileReader"]
+    Reader --> WASAPI["Windows WASAPI shared"]
+    Reader --> Tap["PcmTapSampleProvider"]
     Tap --> Ring["SampleRingBuffer"]
     Ring --> FFT["SpectrumAnalyzer / FftFlat"]
     FFT --> App
-    App --> Buffer["ScreenBuffer"]
-    Buffer --> Terminal["ANSI/VT terminal"]
+    App --> Screen["ScreenBuffer"]
+    Screen --> Terminal["ANSI/VT terminal"]
     Settings["settings.json"] <--> App
-    ATL["ATL metadata service"] -. "пока не подключён к App" .-> Playlist
+    ATL["ATL metadata service"] -. "not wired into App yet" .-> Playlist
 ```
 
-Runtime NuGet dependencies:
+### Runtime dependencies
 
-| Пакет | Версия | Роль |
+| Package | Version | Responsibility |
 |---|---:|---|
-| `NAudio` | 3.3.0 | Meta-package и `AudioFileReader` |
-| `NAudio.Core` | 3.3.0 | Wave/sample abstractions, readers/providers |
-| `NAudio.Wasapi` | 3.3.0 | `WasapiPlayer`, Media Foundation integration |
-| `FftFlat` | 1.0.1 | Complex FFT |
-| `z440.atl.core` | 7.19.0 | Read-only metadata extraction |
+| `NAudio` | 3.3.0 | Meta-package and `AudioFileReader` |
+| `NAudio.Core` | 3.3.0 | Wave/sample abstractions and core readers/providers |
+| `NAudio.Wasapi` | 3.3.0 | `WasapiPlayer` and Media Foundation integration |
+| `FftFlat` | 1.0.1 | Complex FFT implementation |
+| `z440.atl.core` | 7.19.0 | Read-only media metadata extraction |
 
-Test-only dependencies: xUnit, Microsoft.NET.Test.Sdk, coverlet collector, xUnit VS runner.
+xUnit, Microsoft.NET.Test.Sdk, coverlet, and the VS xUnit runner are test-only dependencies.
 
-## 4. Структура исходников
+## 4. Source organization
 
-| Путь | Ответственность |
+| Path | Responsibility |
 |---|---|
-| `Program.cs` | Process entry point, UTF-8, CLI, exit codes, Ctrl+C, global startup error boundary |
-| `App.cs` | Composition root и UI/application controller |
-| `Cli/Arguments.cs` | Ручной детерминированный parser CLI и статический help text |
-| `Configuration/` | Persisted settings и атомарное JSON-хранилище |
-| `Library/Playlist.cs` | Queue navigation, selection, repeat, shuffle bag/history |
-| `Library/FileBrowser.cs` | Enumeration, filtering, sorting, recursive scan |
-| `Library/TrackEntry.cs` | Queue/media metadata model |
-| `Library/MetadataService.cs` | Изолированный ATL loader; пока не wired в `App` |
-| `Audio/AudioEngine.cs` | Decoder/output lifecycle и playback commands |
-| `Audio/PcmTapSampleProvider.cs` | PCM forwarding и mono tap |
-| `Audio/SampleRingBuffer.cs` | Bounded sample transport между audio и DSP |
-| `Audio/PlaybackSnapshot.cs` | Immutable UI-facing playback snapshot |
-| `Dsp/SpectrumAnalyzer.cs` | Hann, FFT, log bands, normalization |
-| `Terminal/TerminalSession.cs` | Alternate-screen RAII |
-| `Terminal/ScreenBuffer.cs` | Styled cells, clipping/sanitization, ANSI diff batching |
-| `tests/Yacplayer.Tests/` | Unit tests чистой логики |
-| `installer/Yacplayer.iss` | Per-user x64 installer |
+| `Program.cs` | Process entry, UTF-8, CLI boundary, exit codes, Ctrl+C, top-level exception handling |
+| `App.cs` | Composition root and application/UI controller |
+| `Cli/Arguments.cs` | Deterministic command-line parser and help text |
+| `Configuration/` | Persisted settings and atomic JSON storage |
+| `Library/Playlist.cs` | Queue selection, navigation, repeat, shuffle bag/history |
+| `Library/FileBrowser.cs` | Enumeration, filtering, sorting, and recursive scanning |
+| `Library/TrackEntry.cs` | Queue and metadata model |
+| `Library/MetadataService.cs` | Isolated ATL loader; not yet connected to `App` |
+| `Audio/AudioEngine.cs` | Decoder/output lifecycle and playback commands |
+| `Audio/PcmTapSampleProvider.cs` | PCM forwarding and mono visualization tap |
+| `Audio/SampleRingBuffer.cs` | Bounded transport between audio and DSP |
+| `Audio/PlaybackSnapshot.cs` | Immutable UI-facing playback state |
+| `Dsp/SpectrumAnalyzer.cs` | Hann window, FFT, logarithmic bands, normalization |
+| `Terminal/TerminalSession.cs` | Alternate-screen lifetime management |
+| `Terminal/ScreenBuffer.cs` | Styled cells, clipping, sanitization, ANSI diff batching |
+| `tests/Yacplayer.Tests/` | Device-independent unit tests |
+| `installer/Yacplayer.iss` | Per-user x64 installer definition |
 
-## 5. Запуск и завершение процесса
+## 5. Process lifecycle
 
 ### 5.1 Entry point
 
-`Program.cs` выполняет последовательность:
+`Program.cs` performs the following sequence:
 
-1. Переключает stdin/stdout в UTF-8.
-2. Вызывает `Arguments.Parse(args)`.
-3. Для malformed CLI печатает ошибку и возвращает `2`.
-4. Для `--help`/`--version` печатает данные и возвращает `0`, не создавая `App`, аудио и alternate screen.
-5. Проверяет существование переданного пути; отсутствие возвращает `3`.
-6. Создаёт `CancellationTokenSource`; обработчик `Console.CancelKeyPress` отменяет token и подавляет немедленное завершение процесса.
-7. Запускает `App.RunAsync`.
-8. Неперехваченная startup/runtime exception печатается в stderr и возвращает `3`.
+1. Configures stdin/stdout for UTF-8.
+2. Parses arguments with `Arguments.Parse`.
+3. Prints malformed-CLI errors and returns exit code `2`.
+4. Handles `--help` and `--version` without constructing `App`, audio, or an alternate screen.
+5. Rejects a missing positional path with exit code `3`.
+6. Creates a `CancellationTokenSource`; `Console.CancelKeyPress` cancels it and suppresses immediate process termination.
+7. Runs `App.RunAsync`.
+8. Maps an unhandled startup/runtime exception to stderr and exit code `3`.
 
-### 5.2 Application startup
+### 5.2 Startup and shutdown sequence
 
 ```mermaid
 sequenceDiagram
@@ -96,19 +98,18 @@ sequenceDiagram
     participant B as FileBrowser
     participant E as AudioEngine
     participant T as TerminalSession
-
     P->>A: RunAsync(token)
     A->>S: LoadAsync
-    S-->>A: validated PlayerSettings
+    S-->>A: validated settings
     A->>A: apply CLI overrides
     alt path supplied
         A->>B: Scan(path, recursive) on worker
         B-->>A: queue paths
     else no path
-        A->>B: EnumerateAsync(last/current dir)
+        A->>B: EnumerateAsync(last/current directory)
         B-->>A: browser entries
     end
-    A->>E: create, set volume/mute
+    A->>E: create and apply volume/mute
     alt direct file supplied
         A->>E: Open(file)
     end
@@ -116,130 +117,91 @@ sequenceDiagram
     loop until Q or cancellation
         A->>A: input → DSP → layout → diff → delay
     end
-    A->>E: Stop/Dispose
+    A->>E: Stop and Dispose
     A->>S: SaveAsync
-    A->>T: Dispose and restore terminal
+    A->>T: restore terminal
 ```
 
-### 5.3 Shutdown ownership
+`App.RunAsync` owns `AudioEngine` and `TerminalSession` through deterministic `using` scopes. Both `Q` and cancellation pass through the same cleanup path. Saving errors do not prevent exit.
 
-- `App.RunAsync` владеет `AudioEngine` и `TerminalSession` через `using`.
-- `Q` выходит через единый cleanup path.
-- Ctrl+C отменяет delay/event loop; cleanup выполняется обычным control flow.
-- Перед сохранением вызывается `audio.Stop()`.
-- Ошибка сохранения `IOException` не мешает выходу.
-- `TerminalSession.Dispose` посылает reset SGR, включает cursor и покидает alternate screen.
+## 6. Application event loop
 
-## 6. Application controller и event loop
+`App` is both the composition root and the current presentation controller; no DI container is used.
 
-`App` — текущий composition root и одновременно controller представления. Отдельного DI-container нет.
+Each frame:
 
-Главный цикл на каждом кадре:
+1. Processes all currently available keys with `Console.KeyAvailable`.
+2. Reads terminal width and height inside an exception boundary.
+3. obtains a `PlaybackSnapshot`;
+4. asks `SpectrumAnalyzer` for 64 raw bands;
+5. applies attack/release smoothing (`0.55` upward, `0.16` downward) and a `0.002` dead zone;
+6. creates a `ScreenBuffer` matching the current terminal size;
+7. builds either browser or player layout;
+8. diffs the frame against the previous one and writes ANSI output;
+9. waits `1000 / FPS` milliseconds with cancellation.
 
-1. Пока `Console.KeyAvailable`, синхронно/асинхронно обрабатывает доступные клавиши.
-2. Безопасно читает `Console.WindowWidth/Height`; исключение разрывает loop.
-3. Получает `PlaybackSnapshot` из `AudioEngine`.
-4. Читает FFT window из ring buffer в `rawBands`.
-5. Сглаживает 64 полосы:
-   - attack coefficient `0.55`, если новое значение выше;
-   - release coefficient `0.16`, если ниже;
-   - значения меньше `0.002` обнуляются.
-6. Создаёт новый `ScreenBuffer` текущего размера.
-7. Строит browser layout либо player layout.
-8. Вычисляет ANSI diff относительно прошлого кадра и пишет его в terminal.
-9. Делает `Task.Delay(1000 / FPS, token)`.
+The loop does not busy-spin. The requested FPS is an upper bound because frame work is added before the fixed delay.
 
-Цикл не busy-spins. Фактический FPS является верхней границей: время обработки и rendering прибавляется к delay.
+## 7. Command-line boundary
 
-## 7. CLI
+`Arguments.Parse` is a single-pass parser with no third-party CLI package. It permits one positional path and flags in any order.
 
-`Arguments.Parse` — single-pass parser без сторонней библиотеки. Он допускает один positional path и флаги в любом порядке.
+Invariants:
 
-Инварианты:
-
-- `--fps` принимает только `30` или `60`;
-- второй positional path — ошибка;
-- неизвестный token, начинающийся с `-`, — ошибка;
-- positional path нормализуется через `Path.GetFullPath`;
-- parser не обращается к аудио или терминалу;
-- existence check выполняется позднее в `Program`.
+- `--fps` accepts only `30` or `60`;
+- a second positional path is rejected;
+- an unknown token beginning with `-` is rejected;
+- the positional path is normalized with `Path.GetFullPath`;
+- parsing does not touch audio or the terminal;
+- path existence is checked later by `Program`.
 
 ## 8. Playlist state machine
 
-`Playlist` хранит:
+`Playlist` owns `_items`, nullable `CurrentIndex`, `SelectedIndex`, a shuffle `_bag`, navigation `_history`, and repeat/shuffle flags.
 
-- `_items: List<TrackEntry>`;
-- `CurrentIndex: int?` — воспроизводимый элемент;
-- `SelectedIndex` — выбранная UI-строка;
-- `_bag: List<int>` — ещё не использованные shuffle indices;
-- `_history: Stack<int>` — навигация назад;
-- `Repeat` и `Shuffle`.
+### Sequential mode
 
-### 8.1 Последовательный режим
+- `Next()` starts at index `0` when no item is current.
+- `RepeatMode.All` wraps the final item to index `0`.
+- `Off` ends the queue at the final item.
+- automatic EOF with `RepeatMode.One` selects the current item again.
+- manual next still traverses the queue in repeat-one mode because the special case applies only to `automatic=true`.
 
-- `Next()` начинает с index `0`, если current отсутствует.
-- В конце списка `RepeatMode.All` делает wrap на `0`.
-- При `Off` следующий элемент в конце отсутствует.
-- Автоматический EOF с `RepeatMode.One` повторно выбирает текущий index.
-- Ручной next при `One` продолжает очередь, поскольку special case применяется только при `automatic=true`.
+### Shuffle
 
-### 8.2 Shuffle
+`RefillBag` stores every index except the current one. `PopBag` randomly chooses and removes an index, preventing repeats within the current cycle. `All` creates a new cycle after exhaustion; `Off` ends it.
 
-`RefillBag` заполняет bag всеми indices, кроме текущего. `PopBag` выбирает случайный элемент и удаляет его. Поэтому один index не повторяется до исчерпания bag. При `All` начинается новый цикл; при `Off` исчерпанный цикл завершает очередь.
+### History and removal
 
-### 8.3 Previous и removal
+`Play` pushes the previous index onto history. `Previous` first consumes history, then falls back to `index - 1`. Removal clears history, rebuilds the bag, and chooses the same index or the final remaining element when the current item is removed. No filesystem deletion API is called.
 
-- Переключение track через `Play` помещает прошлый index в history.
-- `Previous` сначала использует history, затем fallback на `index - 1`.
-- После remove history очищается, bag перестраивается.
-- Удаление current выбирает элемент на том же index, либо последний оставшийся.
-- Удаляется только запись очереди; filesystem API удаления не вызывается.
+### Duplicate policy
 
-### 8.4 Duplicate policy
+The playlist itself permits duplicates. Browser operations use case-insensitive full-path comparisons, so repeated browser activation does not add the same path twice.
 
-Сам `Playlist` разрешает дубликаты. Browser UI использует `FindOrAddTrack` и case-insensitive full-path comparison, поэтому повторный `Enter` на том же файле не создаёт второй элемент. `A` также исключает уже существующие пути.
+## 9. Filesystem and browser
 
-## 9. Browser и filesystem
+### Enumeration
 
-### 9.1 Enumeration
-
-`FileBrowser.EnumerateAsync` выполняет `Directory.EnumerateFileSystemEntries` внутри `Task.Run`, преобразует элементы в `BrowserEntry`, оставляет каталоги и allowlisted extensions, затем сортирует каталоги первыми и имена case-insensitive.
+`FileBrowser.EnumerateAsync` runs enumeration inside `Task.Run`, creates `BrowserEntry` values, retains directories and allowlisted extensions, sorts directories first, then sorts names case-insensitively.
 
 Allowlist: `.wav`, `.mp3`, `.m4a`, `.aac`, `.wma`, `.flac`.
 
-`IOException` и `UnauthorizedAccessException` преобразуются в пустой список. В текущей модели UI не различает пустой и недоступный каталог.
+`IOException` and `UnauthorizedAccessException` become an empty result. The current UI cannot distinguish an inaccessible directory from a legitimately empty one.
 
-### 9.2 Navigation state
+### Navigation
 
-`App` хранит browser path, entries, selected index, scroll offset и признак виртуального уровня дисков. Index `0` всегда зарезервирован:
+`App` stores path, entries, selected index, scroll offset, and a virtual-drive-level flag. Index `0` is reserved for `[..]` in normal directories and `[This PC]` at the virtual root. `Backspace` and `Enter` on `[..]` share the same parent transition. Above a drive root, ready drives from `DriveInfo.GetDrives()` are displayed.
 
-- обычный каталог: `[..]`;
-- виртуальный root: `[This PC]`.
+### Recursive scan
 
-`Backspace` и `Enter` на `[..]` вызывают одинаковый переход. Выше drive root строится список `DriveInfo.GetDrives().Where(IsReady)`.
-
-### 9.3 Recursive scan
-
-`FileBrowser.Scan` использует явный `Stack<string>`. По умолчанию сканируется только текущий каталог. В recursive mode дочерние каталоги помещаются в stack, но directories с `FileAttributes.ReparsePoint` пропускаются, что защищает от типичных junction/symlink loops.
-
-Ошибки отдельных каталогов поглощаются, после чего scan продолжает доступные ветви.
+`FileBrowser.Scan` uses an explicit stack. Non-recursive mode visits only the selected directory. Recursive mode pushes child directories while skipping `FileAttributes.ReparsePoint`, preventing common junction and symlink loops. An inaccessible branch is skipped while other branches continue.
 
 ## 10. Audio subsystem
 
-### 10.1 Объекты и ownership
+### Ownership and source chain
 
-`AudioEngine` владеет одним `AudioFileReader` и одним `WasapiPlayer`. Новый `Open` сначала вызывает `Close`, то есть одновременно активен максимум один decoder/output pair.
-
-Создание output:
-
-```csharp
-new WasapiPlayerBuilder()
-    .WithSharedMode()
-    .WithLatency(100)
-    .Build();
-```
-
-Source chain:
+`AudioEngine` owns one `AudioFileReader` and one `WasapiPlayer`. `Open` calls `Close` first, so at most one decoder/output pair is active.
 
 ```text
 AudioFileReader (ISampleProvider)
@@ -249,45 +211,35 @@ AudioFileReader (ISampleProvider)
   → default Windows render endpoint
 ```
 
-### 10.2 Playback commands
+The player is built in shared mode with a requested latency of 100 ms.
 
-- `Open(path)` — decoder, tap, output init и `Play`;
-- `TogglePause()` — `Pause`/`Play` по состоянию output;
-- `Stop()` — intentional stop, position `0`, ring reset;
-- `Seek(seconds)` — clamp в `[0, TotalTime]`, затем ring reset;
-- `SetVolume(0..100)` — изменяет `AudioFileReader.Volume`;
-- `ToggleMute()` — сохраняет logical volume, устанавливает effective volume `0`;
-- `Dispose()` — отписка event, stop/dispose output, dispose reader.
+### Commands
 
-### 10.3 EOF и error events
+- `Open(path)` creates decoder, tap, output, initializes, and starts playback;
+- `TogglePause()` maps playing/paused to pause/play;
+- `Stop()` marks an intentional stop, stops output, resets position and the ring;
+- `Seek(seconds)` clamps to the track duration and resets the ring;
+- `SetVolume` clamps to 0–100 and updates `AudioFileReader.Volume`;
+- `ToggleMute` preserves logical volume while applying effective volume zero;
+- `Dispose` unsubscribes, stops/disposes output, and disposes the reader.
 
-`WasapiPlayer.PlaybackStopped` обрабатывается в `OnStopped`:
+### EOF and errors
 
-- exception преобразуется в `Error` event;
-- intentional stop/close подавляет EOF;
-- естественный конец вызывает `Ended`.
+`PlaybackStopped` maps exceptions to `Error`. Intentional stop/close suppresses EOF. Natural completion raises `Ended`; `App` selects the next automatic playlist entry or displays `Queue finished`.
 
-`App` подписан на `Ended`, вызывает `Playlist.Next(automatic: true)` и открывает следующий track либо пишет `Queue finished`.
+### Snapshot boundary
 
-### 10.4 Snapshot boundary
+The UI does not receive decoder/output objects. `PlaybackSnapshot` exposes state, path, position, duration, sample rate, channels, logical volume, and mute.
 
-UI не получает decoder/output напрямую. `PlaybackSnapshot` содержит state, path, position, duration, sample rate, channels, logical volume и mute. Snapshot строится при каждом UI frame.
+## 11. PCM tap and ring buffer
 
-## 11. PCM tap и ring buffer
+`PcmTapSampleProvider` forwards source samples unchanged to WASAPI while also copying mono data to the ring. Mono input is written in one block; multichannel frames are averaged across channels.
 
-`PcmTapSampleProvider` реализует `ISampleProvider` и прозрачно возвращает decoder output вызывающей стороне.
+The tap does not perform FFT, logging, JSON, metadata, or terminal I/O.
 
-- mono input копируется в ring блоком;
-- multi-channel input downmix-ится средним арифметическим каналов на frame;
-- tap не выполняет FFT, logging, JSON, metadata или terminal I/O.
+`SampleRingBuffer` owns a fixed `float[]` and monotonically increasing read/write counters with modulo addressing. On overflow, the producer advances the minimum read position so the oldest visualization samples are discarded. `Reset` moves read to the current write position after stop, seek, or track change.
 
-`SampleRingBuffer` имеет фиксированный `float[]`, monotonically increasing `_write`/`_read` counters и modulo addressing.
-
-Overflow policy: после записи writer двигает minimum read position к `write - Capacity`, то есть самые старые samples теряются. Это осознанный приоритет: устаревший spectrum отбрасывается вместо блокировки audio path.
-
-`Reset` при stop/seek/track switch приравнивает read position текущему write position, чтобы DSP не показал PCM от старой позиции.
-
-Текущая реализация использует `Volatile.Read/Write`, но не заявляет формально доказанную lock-free корректность для произвольного числа readers/writers. Предполагаемая модель — один producer и один consumer.
+The intended concurrency model is one producer and one consumer. The present volatile-counter implementation is not claimed as a formally proven lock-free algorithm; producer and consumer can both update `_read` during overflow, which is a hardening target.
 
 ## 12. DSP pipeline
 
@@ -295,7 +247,7 @@ Overflow policy: после записи writer двигает minimum read posi
 flowchart LR
     PCM["Decoded float PCM"] --> Mono["Channel average"]
     Mono --> Ring["32768-sample ring"]
-    Ring --> Window["2048/4096 sample window"]
+    Ring --> Window["2048/4096 samples"]
     Window --> Hann["Hann multiplication"]
     Hann --> FFT["FftFlat.Forward"]
     FFT --> Bands["40 Hz..min(18 kHz, Nyquist)"]
@@ -305,266 +257,218 @@ flowchart LR
     Smooth --> Bars["ANSI colored bars"]
 ```
 
-`SpectrumAnalyzer` выделяет buffers и `FastFourierTransform` один раз в constructor. Для каждого анализа:
+`SpectrumAnalyzer` allocates FFT buffers, the transform, and the Hann window once. Each analysis reads an FFT-sized sample block, applies the window, performs complex forward FFT, maps each output band to logarithmic frequency limits, finds peak magnitude within matching bins, and normalizes to 0–1.
 
-1. Пытается прочитать ровно FFT size samples.
-2. При недостатке очищает output bands и возвращает `false`.
-3. Умножает samples на заранее вычисленное Hann window.
-4. Выполняет complex forward FFT.
-5. Для каждой output band вычисляет логарифмические low/high frequencies.
-6. Находит peak magnitude в соответствующих bins.
-7. Применяет `log10(1 + peak) / 3` и clamp `0..1`.
+The UI uses 64 bands and interpolates them to the spectrum-panel width. Vertical levels are green, yellow, and red; a yellow marker is drawn at the current bar height. The marker is not a time-based peak-hold buffer.
 
-UI использует 64 output bands и интерполирует их на фактическую ширину spectrum panel. Цвет зависит от вертикального уровня: зелёный, жёлтый, красный; над bar рисуется жёлтый peak marker. Это визуальный marker текущей высоты, не временной peak-hold buffer.
+Current caveat: a short ring read is consumed and then causes cleared bands. An exact/non-consuming read is needed to avoid dropping partial FFT windows.
 
-## 13. Terminal subsystem
+## 13. Terminal rendering
 
-### 13.1 TerminalSession
+### Terminal session
 
-В interactive mode constructor отправляет:
+Interactive construction sends alternate-screen, hide-cursor, and clear-screen sequences. Disposal resets SGR, restores the cursor, and returns to the primary screen. Redirected stdout produces no terminal-control output.
 
-- `CSI ?1049h` — alternate screen;
-- `CSI ?25l` — hide cursor;
-- `CSI 2J` — clear.
+### Cell model
 
-Dispose отправляет SGR reset, show cursor и leave alternate screen. При redirected stdout session ничего не пишет.
+A `Cell` stores one UTF-16 `char`, foreground, background, and bold state. `ScreenBuffer.Write` clips coordinates and replaces ESC/control characters with spaces, preventing current metadata/path text from injecting raw ANSI sequences.
 
-### 13.2 Cell model
+One `char` is assumed to occupy one terminal column. Grapheme clusters, surrogate pairs, and East Asian wide-character widths are not measured separately.
 
-Одна `Cell` содержит:
+### Differential rendering
 
-- UTF-16 `char`;
-- ANSI foreground color;
-- ANSI background color;
-- bold flag.
+`Diff(previous)` skips equal cells and combines adjacent changed cells with identical style into horizontal runs. Each run receives one cursor-position escape and only necessary SGR changes. Resizing changes buffer dimensions and forces a full redraw.
 
-`ScreenBuffer.Write` clip-ит координаты по границам и заменяет ESC/control characters пробелом. Это не позволяет metadata/path text внедрять raw ANSI sequences через текущий char writer.
+Current caveat: a new `ScreenBuffer`, cell array, `StringBuilder`, and ANSI string are created for every frame. Reusable double buffers and pooled output are the main GC optimization opportunity.
 
-Ограничение: layout считает один `char` одной terminal column. Grapheme clusters, surrogate pairs и East Asian wide characters отдельно не измеряются.
+### Responsive layouts
 
-### 13.3 Diff algorithm
-
-`Diff(previous)` пропускает равные cells. Изменённые соседние cells с одинаковым style объединяются в horizontal run:
-
-1. Один cursor-position escape на run.
-2. SGR отправляется только при смене fg/bg/bold.
-3. Затем подряд пишутся characters run.
-4. В конце цветового frame при необходимости отправляется SGR reset.
-
-При resize размеры buffers отличаются, поэтому следующий кадр полностью перерисовывается.
-
-### 13.4 Responsive layout
-
-Player layout:
-
-- всегда: header и footer;
-- при `width >= 90 && height >= 22`: Now Playing, Queue, Spectrum, Playback, Audio Info;
-- иначе: компактные Now Playing и Spectrum.
-
-Browser layout:
-
-- при width ≥ 70: files слева, queue справа;
-- при меньшей ширине: одна files panel.
+- Player mode always has header and footer.
+- At `width >= 90` and `height >= 22`, it draws Now Playing, Queue, Spectrum, Playback, and Audio Info panels.
+- Smaller terminals use compact Now Playing and Spectrum panels.
+- Browser width ≥70 shows files and queue; narrower terminals show files only.
 
 ## 14. Input routing
 
-Input имеет контекстный приоритет:
+Input routing is contextual:
 
-1. Если открыт help overlay, принимаются только close keys.
-2. Если открыт browser, клавиши маршрутизируются в browser commands; например `Enter` не запускает selected queue item.
-3. Иначе действует player keymap.
+1. Help overlay consumes close keys and suppresses normal commands.
+2. Browser mode routes keys to browser commands.
+3. Otherwise, the player keymap is active.
 
-`Console.KeyAvailable` предотвращает блокировку frame rendering. Ввод не передаётся в shell и не интерпретируется как ANSI text.
+`Console.KeyAvailable` avoids blocking frame rendering. Keyboard text is never forwarded to a shell or interpreted as ANSI output.
 
-## 15. Settings
+## 15. Settings persistence
 
-`PlayerSettings` — сериализуемая mutable model с version `1`.
+`PlayerSettings` is a version-1 mutable JSON model.
 
 Validation:
 
-- volume clamp `0..100`;
-- FPS только `30` или `60`, иначе `30`;
-- FFT size только `2048` или `4096`, иначе `2048`;
-- неизвестные enums заменяются defaults;
-- отсутствующий `LastDirectory` очищается.
+- volume is clamped to 0–100;
+- FPS is 30 or 60, otherwise 30;
+- FFT size is 2048 or 4096, otherwise 2048;
+- unknown enum values become defaults;
+- an unavailable last directory is cleared.
 
-`SettingsStore.LoadAsync`:
+`SettingsStore.LoadAsync` returns defaults for a missing file or IO failure. Malformed JSON is moved to `.bad` when possible. `SaveAsync` creates the parent directory, writes `.tmp`, then moves it over the destination.
 
-- отсутствие файла → defaults;
-- valid JSON → deserialize + validate;
-- `JsonException` → попытка move в `.bad` + defaults;
-- `IOException` → defaults.
+CLI FPS, recursive, and no-visualizer flags override the in-memory model. Shutdown stores current volume, mute, repeat, shuffle, and the remaining settings.
 
-`SaveAsync` создаёт directory, пишет `.tmp`, затем `File.Move(tmp, target, overwrite: true)`.
-
-CLI FPS, recursive и no-visualizer меняют in-memory settings текущего запуска. На shutdown сохраняются volume, mute, repeat, shuffle и остальная модель.
-
-Текущий wiring gap: загруженные `RepeatMode`/`Shuffle` не передаются в `Playlist` при startup.
+Current wiring gap: loaded repeat/shuffle values are not applied to `Playlist` during startup.
 
 ## 16. Metadata
 
-`TrackEntry` содержит path, title, artist, album, duration и metadata state. Defaults берутся из имени файла/`Unknown artist`.
+`TrackEntry` contains path, title, artist, album, duration, and metadata state. Defaults are filename title and `Unknown artist`.
 
-`MetadataService.LoadAsync` создаёт `ATL.Track` на worker task, читает Title/Artist/Album/DurationMs и применяет fallbacks. Исключение переводит state в `Failed`.
+`MetadataService.LoadAsync` constructs an `ATL.Track` on a worker task, reads title/artist/album/duration, and applies fallbacks. Exceptions set state to `Failed`; original media files are never modified.
 
-Сервис не изменяет исходный файл. Однако текущий `App` не вызывает `MetadataService.LoadAsync`, поэтому эта подсистема пока является подготовленным, протестированным, но не интегрированным компонентом.
+The service is currently isolated: `App` does not call it, so it is tested but not integrated into queue rendering.
 
-## 17. Error handling
+## 17. Error boundaries
 
-| Boundary | Поведение |
+| Boundary | Behavior |
 |---|---|
-| CLI parse | stderr + exit 2 |
-| Missing startup path | stderr + exit 3 |
-| Decoder/output open | `AudioEngine.Error`, status message, process продолжает работу |
-| Playback exception | `Error` event |
-| Browser IO/access | empty list, UI остаётся активным |
-| Recursive scan branch error | branch skip |
-| Bad settings JSON | rename `.bad`, defaults |
-| Settings IO | defaults/load или ignored save error |
-| Terminal size exception | event loop завершается и session восстанавливается |
-| Ctrl+C | cancellation → normal cleanup |
-| Other top-level exception | stderr + exit 3 |
+| CLI parse | stderr and exit 2 |
+| Missing startup path | stderr and exit 3 |
+| Decoder/output open | `AudioEngine.Error`, status update, application continues |
+| Playback failure | `Error` event |
+| Browser IO/access | empty list, UI remains active |
+| Recursive branch failure | branch is skipped |
+| Malformed settings | rename to `.bad`, use defaults |
+| Settings IO | defaults on load or ignored save failure |
+| Terminal-size exception | event loop exits and session restores terminal |
+| Ctrl+C | cancellation and normal cleanup |
+| Other top-level failure | stderr and exit 3 |
 
 ## 18. Threading model
 
-Потоки/contexts:
+- Main async context: input, playlist/browser state, DSP, layout, and settings orchestration.
+- NAudio playback thread: provider reads, mono tap, ring writes.
+- Thread pool: directory enumeration/scanning and isolated metadata loads.
+- NAudio event context: `PlaybackStopped` and downstream `Ended` handling.
 
-- main async thread: input, playlist state, browser state, DSP, layout, settings orchestration;
-- NAudio playback thread: calls provider `Read`, следовательно выполняет PCM tap/ring write;
-- thread pool: directory enumeration/scan и isolated metadata load;
-- NAudio event context: `PlaybackStopped` и downstream `Ended` handler.
+No unbounded thread creation is present. The ring is the intended shared mutable boundary. A current weakness is that the EOF callback can transition playlist/audio state outside the UI loop. Future hardening should enqueue audio events into a UI-owned command channel.
 
-Нет unbounded thread creation. Основной shared mutable boundary — ring counters/data. Playlist/UI state предполагается main-loop owned, хотя EOF callback в текущем wiring может инициировать playlist transition из NAudio event context. Это важная точка будущего hardening: events следует помещать в UI command queue.
+## 19. Resource and performance characteristics
 
-## 19. Performance characteristics
+- PCM ring: 32,768 mono floats, approximately 128 KiB.
+- Requested WASAPI latency: 100 ms.
+- UI FPS: 30 default, 60 optional.
+- FFT: 2048 default; settings also accept 4096.
+- FFT buffers and Hann window are reused.
+- A fresh screen cell array and ANSI output are allocated each frame.
+- Diff rendering reduces terminal traffic by batching styled runs.
+- DSP overload discards stale ring data rather than blocking audio.
+- Directory enumeration runs off the UI thread, although startup scan completes before the TUI opens.
 
-- PCM ring capacity: `32768` mono samples.
-- WASAPI requested latency: `100 ms`.
-- UI FPS: `30` default, `60` optional.
-- FFT: `2048` default, `4096` accepted from settings.
-- FFT buffers и Hann window переиспользуются.
-- ScreenBuffer создаётся на каждый кадр; это UI-side allocation и не влияет на audio callback.
-- Diff renderer уменьшает terminal traffic, объединяя styled runs.
-- При DSP lag ring отбрасывает старые samples.
-- Directory enumeration выполняется вне UI thread, но direct startup scan завершается до открытия TUI.
-
-Проект не заявляет конкретные CPU/RAM показатели без профилирования. Рекомендуемые инструменты: `dotnet-counters`, `dotnet-trace`, Windows Performance Recorder.
+The project makes no unmeasured CPU or RAM claims. Recommended profilers are `dotnet-counters`, `dotnet-trace`, and Windows Performance Recorder.
 
 ## 20. Tests
 
-Тесты не создают реальный WASAPI device.
+The automated suite does not create a real WASAPI device.
 
-Покрыто:
+Covered:
 
-- CLI invalid flags/FPS/help;
-- empty/basic playlist, repeat, remove;
-- shuffle cycle uniqueness;
+- invalid CLI flags/FPS and help parsing;
+- empty/basic playlist, repeat, removal, and shuffle-cycle uniqueness;
 - ring wrap/overwrite/count;
-- identical screen diff, one-cell change, color-only change, ANSI run batching;
-- settings validate/roundtrip/bad JSON;
-- silence и 1 kHz synthetic FFT signal;
-- metadata fallback/nonfatal behavior;
-- browser directory-first sorting и extension filtering.
+- identical terminal frames, one-cell/color changes, and ANSI batching;
+- settings validation, round trip, and malformed JSON;
+- silence and synthetic 1 kHz FFT input;
+- nonfatal metadata fallback;
+- browser directory-first sorting and extension filtering.
 
-Не покрыто автоматически:
+Not covered automatically:
 
-- реальное WAV/MP3 playback и hardware output;
-- pause/seek/mute timing на WASAPI;
-- natural EOF race и rapid track switching;
-- interactive input routing и layout snapshots разных размеров;
+- real WAV/MP3 hardware playback;
+- WASAPI pause/seek/mute timing;
+- natural EOF races and rapid track switching;
+- input routing and layout snapshots;
 - installer execution/uninstall;
-- long-running soak/memory profiling;
-- concurrent ring stress после последних изменений.
+- long-running memory/soak behavior;
+- a comprehensive concurrent ring stress test.
 
-## 21. Build, publish и installer
-
-Build graph:
+## 21. Build, publish, and installer
 
 ```text
 Yacplayer.sln
 ├─ src/Yacplayer/Yacplayer.csproj       net10.0-windows executable
-└─ tests/Yacplayer.Tests/...csproj      xUnit, references app project
+└─ tests/Yacplayer.Tests/...csproj      xUnit project referencing the app
 ```
 
-`ApplicationIcon` ссылается на `assets/Yacplayer.ico`, содержащий PNG-backed sizes 16, 24, 32, 48, 64, 128 и 256 px.
+`ApplicationIcon` points to `assets/Yacplayer.ico`, which contains PNG-backed 16, 24, 32, 48, 64, 128, and 256-pixel layers.
 
-Publish framework-dependent:
+Framework-dependent publish:
 
 ```powershell
 dotnet publish src/Yacplayer/Yacplayer.csproj -c Release -r win-x64 --self-contained false -o artifacts/publish
 ```
 
-Inno Setup:
+Inno Setup performs a per-user installation into `{localappdata}\Programs\Yacplayer`, targets x64-compatible Windows 10 build 17763+, offers English and Russian wizard languages, installs Start-menu and optional desktop shortcuts, checks for `.NETCore.App\10.*`, includes both documentation languages and notices, excludes PDB files, and writes the setup to `artifacts/installer`.
 
-- per-user install в `{localappdata}\Programs\Yacplayer`;
-- x64-compatible only;
-- Windows minimum `10.0.17763`;
-- English/Russian wizard;
-- Start menu и optional desktop shortcut;
-- working directory shortcut — `{userdocs}`, чтобы first browser launch не открывался в install directory;
-- проверка folder pattern `.NETCore.App\10.*`;
-- bundled README, LICENSE и third-party notices;
-- PDB исключён;
-- output `artifacts/installer/Yacplayer-1.0.0-win-x64-setup.exe`.
+The shortcut working directory is `{userdocs}` so a first browser launch does not begin inside the installation directory.
 
-## 22. Security и privacy
+## 22. Security and privacy
 
-- Телеметрия и сетевые запросы в runtime отсутствуют.
-- Программа читает только выбранные локальные media files/settings и не изменяет media.
-- Browser Delete не привязан к filesystem deletion.
-- Control characters в terminal cells заменяются пробелами.
-- Reparse points не обходятся recursive scanner.
-- External codec executables не запускаются.
-- Installer открывает официальный .NET download URL только после явного согласия, если runtime не найден.
-- Проект не является security sandbox: malformed media обрабатывается сторонними decoder/metadata libraries в процессе приложения.
+- Runtime telemetry and network requests are absent.
+- Selected local media and settings are read; media files are never modified.
+- Browser `Delete` is not mapped to filesystem deletion.
+- Control characters are sanitized before terminal cells are written.
+- Recursive scanning skips directory reparse points.
+- External decoder executables are not launched.
+- The installer opens the official .NET download page only after consent when runtime is missing.
+- Yacplayer is not a security sandbox: third-party decoder and metadata libraries parse media in-process.
 
-## 23. Ограничения и технический долг
+## 23. Limitations and technical debt
 
-Приоритетные разрывы текущей архитектуры:
+Priority gaps:
 
-1. Подключить bounded metadata work queue к видимым/current entries и обновлять UI через main-loop events.
-2. Восстанавливать repeat/shuffle из settings в `Playlist`.
-3. Реализовать Waveform либо убрать режим из публичного enum/key cycle до реализации.
-4. Реализовать fullscreen visualizer для сохранённого flag либо убрать неработающий control.
-5. Перенести EOF/Error events в `Channel<AudioEvent>`/command queue, чтобы playlist state менялся только UI loop.
-6. Отличать inaccessible directory от legitimately empty directory.
-7. Добавить queue scrolling; wide queue сейчас рисует начало списка, а не viewport вокруг selection.
-8. Добавить grapheme/display-width aware text layout.
-9. Перевести ring implementation на чётко доказанный SPSC algorithm и добавить длительный concurrent stress test.
-10. Добавить integration WAV fixture, manual/optional WASAPI smoke test и terminal snapshot tests.
-11. Рассмотреть self-contained installer или автоматический bootstrap runtime вместо блокирующей prerequisite check.
-12. Разделить крупный `App` на controller/input/layout components по мере роста функций.
+1. Add a bounded metadata work queue for current/visible entries and apply results through main-loop events.
+2. Restore repeat and shuffle settings into `Playlist`.
+3. Implement Waveform or remove it from the public cycle until it exists.
+4. Implement fullscreen-visualizer layout or remove the nonfunctional control.
+5. Move EOF/error events into `Channel<AudioEvent>` so playlist state changes only on the UI loop.
+6. Distinguish inaccessible directories from empty directories.
+7. Add queue scrolling around selection instead of always rendering from index zero.
+8. Add grapheme/display-width-aware text layout.
+9. Replace the ring with a clearly proven SPSC implementation and add sustained concurrency tests.
+10. Add generated-WAV integration, optional WASAPI smoke, and terminal snapshot tests.
+11. Consider a self-contained installer or runtime bootstrapper.
+12. Split the growing `App` controller into input, application state, and layout components.
+13. Reuse two screen buffers and pooled ANSI output to reduce per-frame GC pressure.
+14. Avoid consuming partial FFT windows; skip DSP when the spectrum is not visible.
+15. Batch multichannel downmix/ring writes and make recursive library insertion incremental and cancellable.
 
-## 24. Точки расширения
+## 24. Extension points
 
-### Новый decoder/format
+### New decoder or format
 
-Расширение в browser allowlist само по себе не добавляет decoder. Нужно подтвердить, что `AudioFileReader`/Media Foundation реально открывает формат, обновить format matrix, error messages и integration tests.
+Adding an extension to the browser allowlist does not add a decoder. Confirm that `AudioFileReader`/Media Foundation opens the format, update the format matrix and error messages, and add integration coverage.
 
-### Новый visualization mode
+### New visualization mode
 
-Нужны отдельные DSP snapshot/model и renderer path. Нельзя выполнять анализ в `PcmTapSampleProvider.Read`; worker/UI consumer должен читать bounded data.
+Introduce a dedicated DSP snapshot/model and renderer. Analysis must remain outside `PcmTapSampleProvider.Read`; a worker/UI consumer should read bounded data.
 
-### Новый terminal widget
+### New terminal widget
 
-Widget должен писать только через `ScreenBuffer`, соблюдать clipping и не вставлять raw escape sequences. ANSI policy остаётся внутри `ScreenBuffer.Diff`/`TerminalSession`.
+Write only through `ScreenBuffer`, respect clipping, and never embed raw escape sequences. ANSI policy remains inside `ScreenBuffer.Diff` and `TerminalSession`.
 
-### Новая persisted setting
+### New persisted setting
 
-Добавить property с default, validation/migration logic, документировать JSON и обеспечить backward compatibility `Version`.
+Add a default, validation/migration logic, document the JSON field, and preserve compatibility with settings `Version`.
 
-### Новый background operation
+### New background operation
 
-Operation должен иметь cancellation, bounded concurrency и наблюдаемую ошибку. Результат должен применяться к UI-owned state через event/command boundary.
+Provide cancellation, bounded concurrency, and observed errors. Apply results to UI-owned state through an event/command boundary.
 
-## 25. Архитектурные инварианты
+## 25. Architectural invariants
 
-- Одновременно существует не более одного active audio reader/output pair.
-- Audio callback не выполняет FFT, terminal rendering, metadata или JSON I/O.
-- Ring buffer имеет ограниченную память и никогда не ждёт consumer.
-- Queue removal не удаляет physical file.
-- Help/version не создают audio/TUI.
-- Raw пользовательский текст не становится ANSI escape sequence.
-- Terminal restoration выполняется через deterministic disposal.
-- Recursive scan не следует directory reparse points.
-- Runtime не использует сеть и внешние decoder executables.
+- At most one active reader/output pair exists.
+- The audio callback performs no FFT, terminal rendering, metadata, or JSON I/O.
+- Sample transport is bounded and never waits for the visualizer.
+- Queue removal never deletes a physical file.
+- Help/version create neither audio nor the alternate screen.
+- User-controlled text cannot become a raw ANSI escape sequence through the cell writer.
+- Terminal restoration is deterministic under normal shutdown and Ctrl+C.
+- Recursive scan does not follow directory reparse points.
+- Runtime uses neither network services nor external decoder executables.
