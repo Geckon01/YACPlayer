@@ -5,6 +5,7 @@
     <TargetFramework>net10.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <ApplicationIcon>..\..\assets\Yacplayer.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
