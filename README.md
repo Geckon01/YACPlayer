@@ -45,12 +45,7 @@ Known limitations:
 
 ### Installer
 
-Run:
-
-```text
-artifacts\installer\Yacplayer-1.0.0-win-x64-setup.exe
-```
-
+Download latest installer from releases page and install as usual app.
 The installer performs a per-user installation into `%LOCALAPPDATA%\Programs\Yacplayer`, does not require administrator privileges, and can optionally create a desktop shortcut.
 
 ### Published application
