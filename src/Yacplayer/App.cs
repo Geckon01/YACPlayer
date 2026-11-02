@@ -53,6 +53,9 @@ public sealed class App(Arguments arguments)
         ScreenBuffer? previous = null;
         var bands = new float[64];
         var rawBands = new float[64];
+        var waveform = new float[4096];
+        var waveformCount = 0;
+        var activeVisualizerMode = _settings.VisualizerMode;
         while (!ct.IsCancellationRequested)
         {
             while (Console.KeyAvailable) if (!await HandleAsync(Console.ReadKey(true), audio, ct)) goto done;
@@ -61,14 +64,27 @@ public sealed class App(Arguments arguments)
             EnsureCurrentMetadata(ct);
             ApplyMetadataCompletions();
             var snapshot = audio.Snapshot;
-            analyzer.Analyze(snapshot.SampleRate <= 0 ? 48000 : snapshot.SampleRate, rawBands);
-            for (var i = 0; i < bands.Length; i++)
+            if (activeVisualizerMode != _settings.VisualizerMode)
             {
-                var smoothing = rawBands[i] > bands[i] ? 0.55f : 0.16f;
-                bands[i] += (rawBands[i] - bands[i]) * smoothing;
-                if (bands[i] < 0.002f) bands[i] = 0;
+                activeVisualizerMode = _settings.VisualizerMode;
+                _ring.Reset();
+                Array.Clear(rawBands);
+                Array.Clear(bands);
+                waveformCount = 0;
             }
-            var screen = Draw(width, height, snapshot, bands);
+            if (_settings.VisualizerMode == VisualizerMode.Spectrum)
+            {
+                analyzer.Analyze(snapshot.SampleRate <= 0 ? 48000 : snapshot.SampleRate, rawBands);
+                for (var i = 0; i < bands.Length; i++)
+                {
+                    var smoothing = rawBands[i] > bands[i] ? 0.55f : 0.16f;
+                    bands[i] += (rawBands[i] - bands[i]) * smoothing;
+                    if (bands[i] < 0.002f) bands[i] = 0;
+                }
+            }
+            else if (_settings.VisualizerMode == VisualizerMode.Waveform) waveformCount = _ring.ReadLatest(waveform);
+            else waveformCount = 0;
+            var screen = Draw(width, height, snapshot, bands, waveform, waveformCount);
             terminal.Render(screen.Diff(previous)); previous = screen;
             try { await Task.Delay(1000 / _settings.Fps, ct); } catch (OperationCanceledException) { break; }
         }
@@ -235,7 +251,7 @@ public sealed class App(Arguments arguments)
         _playlist.Add(new TrackEntry(path)); return _playlist.Items.Count - 1;
     }
 
-    private ScreenBuffer Draw(int width, int height, PlaybackSnapshot playback, float[] bands)
+    private ScreenBuffer Draw(int width, int height, PlaybackSnapshot playback, float[] bands, float[] waveform, int waveformCount)
     {
         var screen = new ScreenBuffer(width, height);
         DrawBox(screen, 0, 0, width - 1, 2, " Yacplayer ", CellColor.Green);
@@ -257,8 +273,8 @@ public sealed class App(Arguments arguments)
             screen.Write(2, 4, Fit(current is null ? "No track selected" : current.Title, width - 4), CellColor.White, bold: true);
             screen.Write(2, 5, Fit(current?.Artist ?? "Select a track with F", width - 4), CellColor.Green);
             DrawProgress(screen, 2, 6, width - 4, playback);
-            DrawBox(screen, 0, 8, width - 1, height - 2, " Spectrum (FFT) ", CellColor.Green);
-            DrawSpectrum(screen, 1, 10, width - 2, Math.Max(1, height - 12), bands);
+            DrawBox(screen, 0, 8, width - 1, height - 2, VisualizerTitle(), CellColor.Green);
+            DrawVisualizer(screen, 1, 10, width - 2, Math.Max(1, height - 12), bands, waveform, waveformCount);
         }
         else
         {
@@ -280,9 +296,10 @@ public sealed class App(Arguments arguments)
                 screen.Write(queueLeft + 2, 5 + row, Fit(text, width - queueLeft - 4), active ? CellColor.Black : selected ? CellColor.Yellow : CellColor.Default, active ? CellBackground.Green : CellBackground.Default, active);
             }
 
-            DrawBox(screen, 0, 10, queueLeft - 1, infoTop - 1, " Spectrum (FFT) ", CellColor.Green);
-            screen.Write(Math.Max(2, queueLeft - 33), 11, $"40 Hz - 18 kHz | {_settings.FftSize} bins", CellColor.Cyan);
-            DrawSpectrum(screen, 1, 12, queueLeft - 2, Math.Max(1, infoTop - 12), bands);
+            DrawBox(screen, 0, 10, queueLeft - 1, infoTop - 1, VisualizerTitle(), CellColor.Green);
+            if (_settings.VisualizerMode == VisualizerMode.Spectrum) screen.Write(Math.Max(2, queueLeft - 33), 11, $"40 Hz - 18 kHz | {_settings.FftSize} bins", CellColor.Cyan);
+            else if (_settings.VisualizerMode == VisualizerMode.Waveform) screen.Write(Math.Max(2, queueLeft - 31), 11, $"Realtime PCM | {playback.SampleRate:N0} Hz", CellColor.Cyan);
+            DrawVisualizer(screen, 1, 12, queueLeft - 2, Math.Max(1, infoTop - 12), bands, waveform, waveformCount);
 
             var middle = queueLeft / 2;
             DrawBox(screen, 0, infoTop, middle - 1, height - 2, " Playback ", CellColor.Green);
@@ -336,6 +353,48 @@ public sealed class App(Arguments arguments)
                 screen.Write(left + x, bottom - level, "█", color);
             }
             if (barHeight > 0) screen.Write(left + x, Math.Max(top, bottom - barHeight), "-", CellColor.Yellow, bold: true);
+        }
+    }
+
+    private string VisualizerTitle() => _settings.VisualizerMode switch
+    {
+        VisualizerMode.Spectrum => " Spectrum (FFT) ",
+        VisualizerMode.Waveform => " Waveform ",
+        _ => " Visualizer: Off "
+    };
+
+    private void DrawVisualizer(ScreenBuffer screen, int left, int top, int width, int height, float[] bands, float[] waveform, int waveformCount)
+    {
+        if (_settings.VisualizerMode == VisualizerMode.Spectrum) DrawSpectrum(screen, left, top, width, height, bands);
+        else if (_settings.VisualizerMode == VisualizerMode.Waveform) DrawWaveform(screen, left, top, width, height, waveform, waveformCount);
+    }
+
+    private static void DrawWaveform(ScreenBuffer screen, int left, int top, int width, int height, float[] samples, int count)
+    {
+        if (width <= 0 || height <= 0 || count <= 0) return;
+        double peak = 0;
+        for (var i = 0; i < count; i++) peak = Math.Max(peak, Math.Abs(samples[i]));
+        if (peak < 0.0001) return;
+
+        var center = top + (height - 1) / 2d;
+        var scale = Math.Max(0, height - 1) / 2d;
+        var gain = 0.9 / peak;
+        for (var x = 0; x < width; x++)
+        {
+            var from = x * count / width;
+            var to = Math.Max(from + 1, (x + 1) * count / width);
+            float minimum = samples[from], maximum = samples[from];
+            for (var i = from + 1; i < Math.Min(count, to); i++)
+            {
+                minimum = Math.Min(minimum, samples[i]);
+                maximum = Math.Max(maximum, samples[i]);
+            }
+
+            var upper = (int)Math.Round(center - Math.Clamp(maximum * gain, -1, 1) * scale);
+            var lower = (int)Math.Round(center - Math.Clamp(minimum * gain, -1, 1) * scale);
+            upper = Math.Clamp(upper, top, top + height - 1);
+            lower = Math.Clamp(lower, top, top + height - 1);
+            for (var y = Math.Min(upper, lower); y <= Math.Max(upper, lower); y++) screen.Write(left + x, y, ".", CellColor.Green, bold: true);
         }
     }
 

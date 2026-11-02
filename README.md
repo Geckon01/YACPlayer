@@ -4,7 +4,7 @@
 
 ![Yacplayer icon](assets/Yacplayer_icon.png)
 
-Yacplayer is a local music player for Windows with a full-screen terminal interface. It plays audio through WASAPI shared mode, provides a queue and a two-panel file browser, renders an FFT spectrum from actual decoded PCM, and is operated entirely from the keyboard.
+Yacplayer is a local music player for Windows with a full-screen terminal interface. It plays audio through WASAPI shared mode, provides a queue and a two-panel file browser, renders FFT spectrum or waveform data from actual decoded PCM, and is operated entirely from the keyboard.
 
 > [!IMPORTANT]
 > **AI-generated code notice:** This project contains code generated and modified with artificial-intelligence assistance. AI-produced code may contain defects, vulnerabilities, or incorrect assumptions; qualified human review and testing are required before production use. This notice does not alter the MIT license or its warranty disclaimer.
@@ -20,14 +20,13 @@ Implemented:
 - startup with either a file or a directory;
 - built-in Midnight Commander-style browser with directories, `[..]`, a `This PC` drive list, and file/folder queue insertion;
 - adaptive ANSI/VT interface with colored panels and differential rendering;
-- Hann-windowed FFT visualizer with logarithmic bands, smoothing, and height-based colors;
+- switchable Hann-windowed FFT spectrum, `+` waveform, and disabled visualizer modes;
 - per-user JSON settings;
 - CLI, Release publishing, and an Inno Setup installer;
 - embedded multi-resolution Windows application icon.
 
 Known limitations:
 
-- a separate `Waveform` renderer is not implemented: `V` changes the enum, but only `Spectrum` is drawn; `Off` disables the spectrum;
 - `H` toggles and persists the fullscreen-visualizer flag, but no dedicated fullscreen layout is currently rendered;
 - ATL metadata is loaded lazily only for the current track; entries that have never played retain filename/`Unknown artist` fallbacks, and bitrate is not calculated;
 - repeat and shuffle are saved to JSON but are not restored into the new `Playlist` instance during startup;
@@ -111,7 +110,7 @@ When stdin or stdout is redirected, the interactive TUI is not started. The proc
 | `Delete` | Remove from the queue only; the file is never deleted |
 | `S` | Toggle shuffle |
 | `R` | Repeat Off → All → One |
-| `V` | Spectrum → Waveform → Off; Waveform is not drawn yet |
+| `V` | Spectrum → Waveform → Off; the panel title follows the active mode |
 | `H` | Toggle the persisted fullscreen flag; no dedicated layout yet |
 | `F` | Open the file browser |
 | `?` | Open the in-application help |
@@ -176,7 +175,7 @@ dotnet build Yacplayer.sln -c Release
 dotnet test Yacplayer.sln -c Release
 ```
 
-The current suite contains 11 device-independent unit tests covering CLI parsing, playlist behavior, shuffle, ring-buffer wrapping, ANSI diff/styles/batching, settings, FFT, metadata fallback, and browser filtering/sorting.
+The current suite contains 12 device-independent unit tests covering CLI parsing, playlist behavior, shuffle, ring-buffer wrapping/latest reads, ANSI diff/styles/batching, settings, FFT, metadata fallback, and browser filtering/sorting.
 
 Framework-dependent win-x64 publish:
 

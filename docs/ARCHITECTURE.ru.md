@@ -32,7 +32,9 @@ flowchart LR
     NAudio --> Tap["PcmTapSampleProvider"]
     Tap --> Ring["SampleRingBuffer"]
     Ring --> FFT["SpectrumAnalyzer / FftFlat"]
+    Ring --> Wave["Latest PCM waveform"]
     FFT --> App
+    Wave --> App
     App --> Buffer["ScreenBuffer"]
     Buffer --> Terminal["ANSI/VT terminal"]
     Settings["settings.json"] <--> App
@@ -141,11 +143,8 @@ sequenceDiagram
 1. Пока `Console.KeyAvailable`, синхронно/асинхронно обрабатывает доступные клавиши.
 2. Безопасно читает `Console.WindowWidth/Height`; исключение разрывает loop.
 3. Получает `PlaybackSnapshot` из `AudioEngine`.
-4. Читает FFT window из ring buffer в `rawBands`.
-5. Сглаживает 64 полосы:
-   - attack coefficient `0.55`, если новое значение выше;
-   - release coefficient `0.16`, если ниже;
-   - значения меньше `0.002` обнуляются.
+4. Выполняет только активный путь визуализации: FFT со сглаживанием для `Spectrum`, чтение последних samples для `Waveform`, отсутствие DSP-чтения для `Off`.
+5. При смене режима сбрасывает накопленные данные визуализации.
 6. Создаёт новый `ScreenBuffer` текущего размера.
 7. Строит browser layout либо player layout.
 8. Вычисляет ANSI diff относительно прошлого кадра и пишет его в terminal.
@@ -287,7 +286,7 @@ UI не получает decoder/output напрямую. `PlaybackSnapshot` с�
 
 Overflow policy: после записи writer двигает minimum read position к `write - Capacity`, то есть самые старые samples теряются. Это осознанный приоритет: устаревший spectrum отбрасывается вместо блокировки audio path.
 
-`Reset` при stop/seek/track switch приравнивает read position текущему write position, чтобы DSP не показал PCM от старой позиции.
+`Reset` при stop/seek/track switch или смене режима приравнивает read position текущему write position, чтобы DSP не показал старый PCM. `ReadLatest` копирует новейший блок и отбрасывает backlog для waveform.
 
 Текущая реализация использует `Volatile.Read/Write`, но не заявляет формально доказанную lock-free корректность для произвольного числа readers/writers. Предполагаемая модель — один producer и один consumer.
 
@@ -297,7 +296,7 @@ Overflow policy: после записи writer двигает minimum read posi
 flowchart LR
     PCM["Decoded float PCM"] --> Mono["Channel average"]
     Mono --> Ring["32768-sample ring"]
-    Ring --> Window["2048/4096 sample window"]
+    Ring -->|"только Spectrum"| Window["2048/4096 sample window"]
     Window --> Hann["Hann multiplication"]
     Hann --> FFT["FftFlat.Forward"]
     FFT --> Bands["40 Hz..min(18 kHz, Nyquist)"]
@@ -305,6 +304,8 @@ flowchart LR
     Log --> Clamp["clamp 0..1"]
     Clamp --> Smooth["attack/release smoothing"]
     Smooth --> Bars["ANSI colored bars"]
+    Ring -->|"только Waveform"| Latest["до 4096 последних samples"]
+    Latest --> Plus["интерполированные символы +"]
 ```
 
 `SpectrumAnalyzer` выделяет buffers и `FastFourierTransform` один раз в constructor. Для каждого анализа:
@@ -318,6 +319,8 @@ flowchart LR
 7. Применяет `log10(1 + peak) / 3` и clamp `0..1`.
 
 UI использует 64 output bands и интерполирует их на фактическую ширину spectrum panel. Цвет зависит от вертикального уровня: зелёный, жёлтый, красный; над bar рисуется жёлтый peak marker. Это визуальный marker текущей высоты, не временной peak-hold buffer.
+
+Режим Waveform читает до 4096 новейших mono PCM samples и применяет визуальное усиление кадра, поэтому форма видна при низкой громкости без изменения звука. Для каждой колонки вычисляется min/max envelope соответствующего диапазона samples, отображается относительно вертикального центра и рисуется зелёными `+`. Почти полная тишина остаётся пустой, чтобы не усиливать шум. В режиме Off не выполняется ни FFT, ни waveform sampling. Заголовок и информационная строка панели соответствуют выбранному режиму.
 
 ## 13. Terminal subsystem
 
@@ -533,16 +536,15 @@ Inno Setup:
 Приоритетные разрывы текущей архитектуры:
 
 1. Восстанавливать repeat/shuffle из settings в `Playlist`.
-2. Реализовать Waveform либо убрать режим из публичного enum/key cycle до реализации.
-3. Реализовать fullscreen visualizer для сохранённого flag либо убрать неработающий control.
-4. Перенести EOF/Error events в `Channel<AudioEvent>`/command queue, чтобы playlist state менялся только UI loop.
-5. Отличать inaccessible directory от legitimately empty directory.
-6. Добавить queue scrolling; wide queue сейчас рисует начало списка, а не viewport вокруг selection.
-7. Добавить grapheme/display-width aware text layout.
-8. Перевести ring implementation на чётко доказанный SPSC algorithm и добавить длительный concurrent stress test.
-9. Добавить integration WAV fixture, manual/optional WASAPI smoke test и terminal snapshot tests.
-10. Рассмотреть self-contained installer или автоматический bootstrap runtime вместо блокирующей prerequisite check.
-11. Разделить крупный `App` на controller/input/layout components по мере роста функций.
+2. Реализовать fullscreen visualizer для сохранённого flag либо убрать неработающий control.
+3. Перенести EOF/Error events в `Channel<AudioEvent>`/command queue, чтобы playlist state менялся только UI loop.
+4. Отличать inaccessible directory от legitimately empty directory.
+5. Добавить queue scrolling; wide queue сейчас рисует начало списка, а не viewport вокруг selection.
+6. Добавить grapheme/display-width aware text layout.
+7. Перевести ring implementation на чётко доказанный SPSC algorithm и добавить длительный concurrent stress test.
+8. Добавить integration WAV fixture, manual/optional WASAPI smoke test и terminal snapshot tests.
+9. Рассмотреть self-contained installer или автоматический bootstrap runtime вместо блокирующей prerequisite check.
+10. Разделить крупный `App` на controller/input/layout components по мере роста функций.
 
 ## 24. Точки расширения
 

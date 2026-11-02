@@ -32,7 +32,9 @@ flowchart LR
     Reader --> Tap["PcmTapSampleProvider"]
     Tap --> Ring["SampleRingBuffer"]
     Ring --> FFT["SpectrumAnalyzer / FftFlat"]
+    Ring --> Wave["Latest PCM waveform"]
     FFT --> App
+    Wave --> App
     App --> Screen["ScreenBuffer"]
     Screen --> Terminal["ANSI/VT terminal"]
     Settings["settings.json"] <--> App
@@ -133,8 +135,8 @@ Each frame:
 1. Processes all currently available keys with `Console.KeyAvailable`.
 2. Reads terminal width and height inside an exception boundary.
 3. obtains a `PlaybackSnapshot`;
-4. asks `SpectrumAnalyzer` for 64 raw bands;
-5. applies attack/release smoothing (`0.55` upward, `0.16` downward) and a `0.002` dead zone;
+4. runs only the active visualizer path: FFT plus smoothing for `Spectrum`, a latest-sample read for `Waveform`, and no DSP read for `Off`;
+5. resets pending visualization data when the mode changes;
 6. creates a `ScreenBuffer` matching the current terminal size;
 7. builds either browser or player layout;
 8. diffs the frame against the previous one and writes ANSI output;
@@ -237,7 +239,7 @@ The UI does not receive decoder/output objects. `PlaybackSnapshot` exposes state
 
 The tap does not perform FFT, logging, JSON, metadata, or terminal I/O.
 
-`SampleRingBuffer` owns a fixed `float[]` and monotonically increasing read/write counters with modulo addressing. On overflow, the producer advances the minimum read position so the oldest visualization samples are discarded. `Reset` moves read to the current write position after stop, seek, or track change.
+`SampleRingBuffer` owns a fixed `float[]` and monotonically increasing read/write counters with modulo addressing. On overflow, the producer advances the minimum read position so the oldest visualization samples are discarded. `Reset` moves read to the current write position after stop, seek, track change, or visualizer-mode change. `ReadLatest` copies the newest block and discards older backlog for the waveform.
 
 The intended concurrency model is one producer and one consumer. The present volatile-counter implementation is not claimed as a formally proven lock-free algorithm; producer and consumer can both update `_read` during overflow, which is a hardening target.
 
@@ -247,7 +249,7 @@ The intended concurrency model is one producer and one consumer. The present vol
 flowchart LR
     PCM["Decoded float PCM"] --> Mono["Channel average"]
     Mono --> Ring["32768-sample ring"]
-    Ring --> Window["2048/4096 samples"]
+    Ring -->|"Spectrum only"| Window["2048/4096 samples"]
     Window --> Hann["Hann multiplication"]
     Hann --> FFT["FftFlat.Forward"]
     FFT --> Bands["40 Hz..min(18 kHz, Nyquist)"]
@@ -255,11 +257,15 @@ flowchart LR
     Log --> Clamp["clamp 0..1"]
     Clamp --> Smooth["attack/release smoothing"]
     Smooth --> Bars["ANSI colored bars"]
+    Ring -->|"Waveform only"| Latest["up to 4096 latest samples"]
+    Latest --> Plus["interpolated + characters"]
 ```
 
 `SpectrumAnalyzer` allocates FFT buffers, the transform, and the Hann window once. Each analysis reads an FFT-sized sample block, applies the window, performs complex forward FFT, maps each output band to logarithmic frequency limits, finds peak magnitude within matching bins, and normalizes to 0–1.
 
 The UI uses 64 bands and interpolates them to the spectrum-panel width. Vertical levels are green, yellow, and red; a yellow marker is drawn at the current bar height. The marker is not a time-based peak-hold buffer.
+
+Waveform mode reads up to 4096 newest mono PCM samples and applies per-frame visual gain so the shape remains visible at low playback volume without changing audio. Each terminal column receives the minimum/maximum envelope of its sample range, mapped around the vertical center and drawn with green `+` characters. Near-silence is left blank instead of amplifying noise. Off mode performs neither FFT nor waveform sampling. The panel title and detail label follow the selected mode.
 
 Current caveat: a short ring read is consumed and then causes cleared bands. An exact/non-consuming read is needed to avoid dropping partial FFT windows.
 
@@ -432,19 +438,18 @@ The shortcut working directory is `{userdocs}` so a first browser launch does no
 Priority gaps:
 
 1. Restore repeat and shuffle settings into `Playlist`.
-2. Implement Waveform or remove it from the public cycle until it exists.
-3. Implement fullscreen-visualizer layout or remove the nonfunctional control.
-4. Move EOF/error events into `Channel<AudioEvent>` so playlist state changes only on the UI loop.
-5. Distinguish inaccessible directories from empty directories.
-6. Add queue scrolling around selection instead of always rendering from index zero.
-7. Add grapheme/display-width-aware text layout.
-8. Replace the ring with a clearly proven SPSC implementation and add sustained concurrency tests.
-9. Add generated-WAV integration, optional WASAPI smoke, and terminal snapshot tests.
-10. Consider a self-contained installer or runtime bootstrapper.
-11. Split the growing `App` controller into input, application state, and layout components.
-12. Reuse two screen buffers and pooled ANSI output to reduce per-frame GC pressure.
-13. Avoid consuming partial FFT windows; skip DSP when the spectrum is not visible.
-14. Batch multichannel downmix/ring writes and make recursive library insertion incremental and cancellable.
+2. Implement fullscreen-visualizer layout or remove the nonfunctional control.
+3. Move EOF/error events into `Channel<AudioEvent>` so playlist state changes only on the UI loop.
+4. Distinguish inaccessible directories from empty directories.
+5. Add queue scrolling around selection instead of always rendering from index zero.
+6. Add grapheme/display-width-aware text layout.
+7. Replace the ring with a clearly proven SPSC implementation and add sustained concurrency tests.
+8. Add generated-WAV integration, optional WASAPI smoke, and terminal snapshot tests.
+9. Consider a self-contained installer or runtime bootstrapper.
+10. Split the growing `App` controller into input, application state, and layout components.
+11. Reuse two screen buffers and pooled ANSI output to reduce per-frame GC pressure.
+12. Avoid consuming partial FFT windows; skip spectrum analysis while playback is inactive.
+13. Batch multichannel downmix/ring writes and make recursive library insertion incremental and cancellable.
 
 ## 24. Extension points
 

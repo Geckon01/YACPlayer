@@ -17,7 +17,7 @@ Priority meanings: **P0** blocks a supported release or risks incorrect behavior
 | P1 | Rendering | A new cell array and ANSI output are allocated every frame | Avoidable GC and CPU load, especially at 60 FPS |
 | P1 | Library loading | Recursive scans and queue insertion are not incremental | Slow startup/UI stalls and poor scaling for large libraries |
 | P2 | Settings | Saved repeat and shuffle state is not restored into the playlist | Persisted settings do not fully affect runtime behavior |
-| P2 | UI | Waveform and fullscreen visualizer settings are exposed but incomplete | Controls promise behavior that is not implemented |
+| P2 | UI | The fullscreen visualizer setting is exposed but incomplete | The `H` control promises a layout that is not implemented |
 | P3 | Metadata | Metadata is intentionally loaded only for the current track | Unplayed queue entries retain filename/unknown-artist fallbacks |
 | P2 | Browser | Empty and inaccessible folders are not distinguished | Misleading error feedback |
 
@@ -69,7 +69,7 @@ Recommended action: use cancellable streaming enumeration, bounded batches, bulk
 
 ### P2 — unnecessary DSP work and repeated band mapping
 
-Spectrum analysis should not run when its panel is hidden or when no audio is playing. Logarithmic FFT-bin boundaries are recalculated for every band and every frame although they change only with FFT size, sample rate, or band count.
+Spectrum analysis is now disabled in Waveform and Off modes, but still runs when no audio is playing. Logarithmic FFT-bin boundaries are recalculated for every band and every spectrum frame although they change only with FFT size, sample rate, or band count.
 
 Recommended action: gate analysis by visibility/playback state and cache band-to-bin ranges. Measure before and after changes rather than asserting unverified CPU savings.
 
@@ -88,7 +88,7 @@ Recommended action: define representative scenarios and capture baselines with `
 ## Functional and UI gaps
 
 - **P2 — settings restore:** `PlayerSettings.RepeatMode` and `Shuffle` are saved but not applied to `Playlist` at startup.
-- **P2 — unfinished visualizer modes:** Waveform is present in configuration/UI concepts but is not implemented. The fullscreen-visualizer control also lacks a complete layout. Implement them or remove the controls until supported.
+- **P2 — unfinished fullscreen mode:** the fullscreen-visualizer control lacks a dedicated layout. Implement it or remove the control until supported.
 - **P3 — metadata scope:** metadata is loaded only for the current track and applied on the UI loop. Unplayed queue entries intentionally retain lightweight fallback values; bitrate is still unavailable.
 - **P2 — browser diagnostics:** inaccessible directories and empty directories share the same user-facing result. Preserve and display enumeration errors without crashing.
 - **P2 — queue scrolling:** the queue renders from its first item instead of keeping the selected/current item visible in long queues.
@@ -178,7 +178,7 @@ A platform should not be marked supported until it can open all documented codec
 | P1 | Рендеринг | На каждом кадре создаются массив ячеек и ANSI-строка | Лишние GC и CPU, особенно при 60 FPS |
 | P1 | Медиатека | Сканирование и добавление очереди не потоковые | Медленный запуск и плохое масштабирование |
 | P2 | Настройки | Repeat и shuffle сохраняются, но не восстанавливаются в playlist | Настройки не полностью влияют на запуск |
-| P2 | UI | Waveform и полноэкранный визуализатор незавершены | Интерфейс обещает отсутствующее поведение |
+| P2 | UI | Полноэкранный визуализатор не завершён | Клавиша `H` обещает отсутствующую компоновку |
 | P3 | Метаданные | Метаданные намеренно читаются только для текущего трека | Незапускавшиеся элементы сохраняют имя файла/Unknown artist |
 | P2 | Браузер | Пустая и недоступная папки не различаются | Ошибочное сообщение пользователю |
 
@@ -230,7 +230,7 @@ Unit-тесты не используют реальное аудиоустро�
 
 ### P2 — лишний DSP и повторный расчёт диапазонов
 
-FFT не нужно выполнять при скрытой панели или отсутствии воспроизведения. Границы FFT bins для логарифмических полос сейчас можно кешировать: они меняются только с FFT size, sample rate или количеством полос.
+FFT теперь отключается в режимах Waveform и Off, но всё ещё выполняется при отсутствии воспроизведения. Границы FFT bins можно кешировать: они меняются только с FFT size, sample rate или количеством полос.
 
 ### P2 — планирование кадров
 
@@ -243,7 +243,7 @@ Delay-based polling добавляет время работы к задержк
 ## Функциональные и UI-пробелы
 
 - **P2 — восстановление настроек:** `RepeatMode` и `Shuffle` сохраняются, но не применяются к `Playlist` при запуске.
-- **P2 — незавершённые режимы:** Waveform и полноэкранная компоновка визуализатора не реализованы полностью; их нужно закончить или временно убрать из UI.
+- **P2 — незавершённый fullscreen:** отдельная полноэкранная компоновка визуализатора не реализована; её нужно закончить или временно убрать управление `H`.
 - **P3 — область метаданных:** метаданные читаются только для текущего трека и применяются в UI-цикле. Остальные элементы намеренно используют лёгкие fallback-значения; bitrate пока отсутствует.
 - **P2 — диагностика браузера:** access denied должен отличаться от пустой папки и не приводить к падению.
 - **P2 — прокрутка очереди:** текущий/выбранный трек должен оставаться видимым в длинной очереди.

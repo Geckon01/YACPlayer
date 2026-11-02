@@ -14,5 +14,11 @@ public sealed class SampleRingBuffer
         var read = Volatile.Read(ref _read); var available = (int)Math.Min(destination.Length, Math.Max(0, Volatile.Read(ref _write) - read));
         for (var i = 0; i < available; i++) destination[i] = _data[(int)((read + i) % Capacity)]; Volatile.Write(ref _read, read + available); return available;
     }
+    public int ReadLatest(Span<float> destination)
+    {
+        var write = Volatile.Read(ref _write); var read = Volatile.Read(ref _read);
+        var available = (int)Math.Min(Capacity, Math.Max(0, write - read)); var count = Math.Min(destination.Length, available); var start = write - count;
+        for (var i = 0; i < count; i++) destination[i] = _data[(int)((start + i) % Capacity)]; Volatile.Write(ref _read, write); return count;
+    }
     public void Reset() => Volatile.Write(ref _read, Volatile.Read(ref _write));
 }
