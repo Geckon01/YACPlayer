@@ -186,6 +186,15 @@ dotnet publish src/Yacplayer/Yacplayer.csproj `
   -o artifacts/publish
 ```
 
+Native AOT win-x64 publish (self-contained, no .NET runtime installation required):
+
+```powershell
+dotnet publish src/Yacplayer/Yacplayer.csproj `
+  -p:PublishProfile=NativeAotWinX64
+```
+
+Output: `artifacts/publish-aot/Yacplayer.exe`. Native AOT requires the .NET native toolchain for Windows (Visual Studio Build Tools with the Desktop development with C++ workload). The AOT profile is Windows-only because audio output still uses WASAPI.
+
 Build the Inno Setup 6 installer:
 
 ```powershell

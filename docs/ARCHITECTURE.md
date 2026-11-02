@@ -404,6 +404,14 @@ Framework-dependent publish:
 dotnet publish src/Yacplayer/Yacplayer.csproj -c Release -r win-x64 --self-contained false -o artifacts/publish
 ```
 
+Native AOT publish:
+
+```powershell
+dotnet publish src/Yacplayer/Yacplayer.csproj -p:PublishProfile=NativeAotWinX64
+```
+
+The `NativeAotWinX64` profile produces a trimmed, self-contained native executable in `artifacts/publish-aot`. Settings JSON uses source-generated `System.Text.Json` metadata, so persistence does not depend on runtime code generation. This profile changes deployment and startup characteristics only; it does not remove the Windows/WASAPI platform boundary.
+
 Inno Setup performs a per-user installation into `{localappdata}\Programs\Yacplayer`, targets x64-compatible Windows 10 build 17763+, offers English and Russian wizard languages, installs Start-menu and optional desktop shortcuts, checks for `.NETCore.App\10.*`, includes both documentation languages and notices, excludes PDB files, and writes the setup to `artifacts/installer`.
 
 The shortcut working directory is `{userdocs}` so a first browser launch does not begin inside the installation directory.

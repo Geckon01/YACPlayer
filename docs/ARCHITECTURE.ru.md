@@ -496,6 +496,14 @@ Publish framework-dependent:
 dotnet publish src/Yacplayer/Yacplayer.csproj -c Release -r win-x64 --self-contained false -o artifacts/publish
 ```
 
+Native AOT publish:
+
+```powershell
+dotnet publish src/Yacplayer/Yacplayer.csproj -p:PublishProfile=NativeAotWinX64
+```
+
+Профиль `NativeAotWinX64` создаёт trimmed self-contained нативный исполняемый файл в `artifacts/publish-aot`. JSON-настройки используют source-generated metadata `System.Text.Json`, поэтому persistence не требует генерации кода во время выполнения. Профиль меняет способ развёртывания и характеристики запуска, но не устраняет привязку к Windows/WASAPI.
+
 Inno Setup:
 
 - per-user install в `{localappdata}\Programs\Yacplayer`;
