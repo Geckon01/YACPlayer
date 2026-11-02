@@ -29,7 +29,7 @@ Known limitations:
 
 - a separate `Waveform` renderer is not implemented: `V` changes the enum, but only `Spectrum` is drawn; `Off` disables the spectrum;
 - `H` toggles and persists the fullscreen-visualizer flag, but no dedicated fullscreen layout is currently rendered;
-- the ATL-backed `MetadataService` exists and is unit-tested but is not wired into `App`; the UI normally uses the filename, `Unknown artist`, and does not calculate bitrate;
+- ATL metadata is loaded lazily only for the current track; entries that have never played retain filename/`Unknown artist` fallbacks, and bitrate is not calculated;
 - repeat and shuffle are saved to JSON but are not restored into the new `Playlist` instance during startup;
 - interactive queue search, mouse input, OGG, and Opus are not implemented;
 - actual WASAPI and codec behavior still requires manual verification on a machine with an audio device.

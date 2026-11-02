@@ -7,9 +7,14 @@ public class DspAndMetadataTests
         const int size=2048, rate=48000; var ring=new SampleRingBuffer(size*2); var analyzer=new SpectrumAnalyzer(ring,size); var bands=new float[24]; ring.Write(new float[size]); Assert.True(analyzer.Analyze(rate,bands)); Assert.All(bands,v=>Assert.True(float.IsFinite(v)));
         var tone=Enumerable.Range(0,size).Select(i=>(float)Math.Sin(2*Math.PI*1000*i/rate)).ToArray(); ring.Write(tone); Assert.True(analyzer.Analyze(rate,bands)); Assert.True(bands.Max()>0); Assert.All(bands,v=>Assert.InRange(v,0,1));
     }
-    [Fact] public async Task MetadataFailureIsNonFatal()
+    [Fact] public async Task MetadataUsesFallbacksForMissingFile()
     {
-        var item=new TrackEntry(System.IO.Path.Combine(System.IO.Path.GetTempPath(),Guid.NewGuid()+".mp3")); var fallback=item.Title; await MetadataService.LoadAsync(item); Assert.Equal(fallback,item.Title); Assert.Equal("Unknown artist",item.Artist); Assert.Contains(item.MetadataState, new[]{MetadataState.Loaded, MetadataState.Failed});
+        var path=System.IO.Path.Combine(System.IO.Path.GetTempPath(),Guid.NewGuid()+".mp3");
+        var metadata=await MetadataService.LoadAsync(path);
+        Assert.Equal(System.IO.Path.GetFileNameWithoutExtension(path),metadata.Title);
+        Assert.Equal("Unknown artist",metadata.Artist);
+        Assert.Equal("",metadata.Album);
+        Assert.Equal(TimeSpan.Zero,metadata.Duration);
     }
     [Fact] public async Task BrowserSortsDirectoriesFirstAndFilters()
     {

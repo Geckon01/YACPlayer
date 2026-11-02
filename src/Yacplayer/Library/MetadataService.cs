@@ -1,9 +1,28 @@
 namespace Yacplayer.Library;
+
+public sealed record TrackMetadata(string Title, string Artist, string Album, TimeSpan Duration);
+
 public static class MetadataService
 {
-    public static Task LoadAsync(TrackEntry entry, CancellationToken ct = default) => Task.Run(() =>
+    private static readonly SemaphoreSlim LoadGate = new(1, 1);
+
+    public static async Task<TrackMetadata> LoadAsync(string path, CancellationToken ct = default)
     {
-        try { ct.ThrowIfCancellationRequested(); var track = new ATL.Track(entry.Path); entry.Title = string.IsNullOrWhiteSpace(track.Title) ? System.IO.Path.GetFileNameWithoutExtension(entry.Path) : track.Title; entry.Artist = string.IsNullOrWhiteSpace(track.Artist) ? "Unknown artist" : track.Artist; entry.Album = track.Album ?? ""; entry.Duration = TimeSpan.FromMilliseconds(track.DurationMs); entry.MetadataState = MetadataState.Loaded; }
-        catch { entry.MetadataState = MetadataState.Failed; }
-    }, ct);
+        await LoadGate.WaitAsync(ct);
+        try
+        {
+            return await Task.Run(() =>
+            {
+                ct.ThrowIfCancellationRequested();
+                var track = new ATL.Track(path);
+                ct.ThrowIfCancellationRequested();
+                return new TrackMetadata(
+                    string.IsNullOrWhiteSpace(track.Title) ? System.IO.Path.GetFileNameWithoutExtension(path) : track.Title,
+                    string.IsNullOrWhiteSpace(track.Artist) ? "Unknown artist" : track.Artist,
+                    track.Album ?? "",
+                    TimeSpan.FromMilliseconds(track.DurationMs));
+            }, ct);
+        }
+        finally { LoadGate.Release(); }
+    }
 }

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Yacplayer.Audio;
 using Yacplayer.Cli;
 using Yacplayer.Configuration;
@@ -21,6 +22,9 @@ public sealed class App(Arguments arguments)
     private int _browserSelected;
     private int _browserScroll;
     private bool _browserAtDrives;
+    private readonly ConcurrentQueue<MetadataCompletion> _metadataCompletions = new();
+    private TrackEntry? _metadataTarget;
+    private CancellationTokenSource? _metadataCancellation;
 
     public async Task<int> RunAsync(CancellationToken ct)
     {
@@ -54,6 +58,8 @@ public sealed class App(Arguments arguments)
             while (Console.KeyAvailable) if (!await HandleAsync(Console.ReadKey(true), audio, ct)) goto done;
             int width, height;
             try { width = Math.Max(20, Console.WindowWidth); height = Math.Max(8, Console.WindowHeight); } catch { break; }
+            EnsureCurrentMetadata(ct);
+            ApplyMetadataCompletions();
             var snapshot = audio.Snapshot;
             analyzer.Analyze(snapshot.SampleRate <= 0 ? 48000 : snapshot.SampleRate, rawBands);
             for (var i = 0; i < bands.Length; i++)
@@ -67,6 +73,8 @@ public sealed class App(Arguments arguments)
             try { await Task.Delay(1000 / _settings.Fps, ct); } catch (OperationCanceledException) { break; }
         }
     done:
+        _metadataCancellation?.Cancel();
+        _metadataCancellation?.Dispose();
         audio.Stop();
         _settings.Volume = audio.Snapshot.Volume; _settings.Muted = audio.Snapshot.Muted;
         _settings.RepeatMode = _playlist.Repeat; _settings.Shuffle = _playlist.Shuffle;
@@ -122,6 +130,53 @@ public sealed class App(Arguments arguments)
     }
 
     private static void Play(TrackEntry? track, AudioEngine audio) { if (track is not null) audio.Open(track.Path); }
+
+    private void EnsureCurrentMetadata(CancellationToken appCancellation)
+    {
+        var current = _playlist.CurrentIndex is int index ? _playlist.Items[index] : null;
+        if (ReferenceEquals(current, _metadataTarget)) return;
+
+        _metadataCancellation?.Cancel();
+        _metadataCancellation?.Dispose();
+        _metadataCancellation = null;
+        _metadataTarget = current;
+
+        if (current is null || current.MetadataState != MetadataState.Pending) return;
+
+        _metadataCancellation = CancellationTokenSource.CreateLinkedTokenSource(appCancellation);
+        _ = LoadCurrentMetadataAsync(current, _metadataCancellation.Token);
+    }
+
+    private async Task LoadCurrentMetadataAsync(TrackEntry entry, CancellationToken ct)
+    {
+        try
+        {
+            var metadata = await MetadataService.LoadAsync(entry.Path, ct);
+            if (!ct.IsCancellationRequested) _metadataCompletions.Enqueue(new(entry, metadata, null));
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+        catch (Exception ex) { if (!ct.IsCancellationRequested) _metadataCompletions.Enqueue(new(entry, null, ex.Message)); }
+    }
+
+    private void ApplyMetadataCompletions()
+    {
+        while (_metadataCompletions.TryDequeue(out var completion))
+        {
+            if (!ReferenceEquals(completion.Entry, _metadataTarget)) continue;
+            if (completion.Metadata is null)
+            {
+                completion.Entry.MetadataState = MetadataState.Failed;
+                _message = $"Cannot read metadata for {Path.GetFileName(completion.Entry.Path)}: {completion.Error}";
+                continue;
+            }
+
+            completion.Entry.Title = completion.Metadata.Title;
+            completion.Entry.Artist = completion.Metadata.Artist;
+            completion.Entry.Album = completion.Metadata.Album;
+            completion.Entry.Duration = completion.Metadata.Duration;
+            completion.Entry.MetadataState = MetadataState.Loaded;
+        }
+    }
 
     private async Task LoadBrowserAsync(string path, CancellationToken ct)
     {
@@ -345,4 +400,6 @@ public sealed class App(Arguments arguments)
         if (width <= 0) return "";
         return value.Length <= width ? value : width == 1 ? value[..1] : value[..(width - 1)] + "~";
     }
+
+    private sealed record MetadataCompletion(TrackEntry Entry, TrackMetadata? Metadata, string? Error);
 }

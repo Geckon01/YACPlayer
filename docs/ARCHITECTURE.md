@@ -36,7 +36,7 @@ flowchart LR
     App --> Screen["ScreenBuffer"]
     Screen --> Terminal["ANSI/VT terminal"]
     Settings["settings.json"] <--> App
-    ATL["ATL metadata service"] -. "not wired into App yet" .-> Playlist
+    ATL["ATL metadata service"] -->|"current track only"| App
 ```
 
 ### Runtime dependencies
@@ -62,7 +62,7 @@ xUnit, Microsoft.NET.Test.Sdk, coverlet, and the VS xUnit runner are test-only d
 | `Library/Playlist.cs` | Queue selection, navigation, repeat, shuffle bag/history |
 | `Library/FileBrowser.cs` | Enumeration, filtering, sorting, and recursive scanning |
 | `Library/TrackEntry.cs` | Queue and metadata model |
-| `Library/MetadataService.cs` | Isolated ATL loader; not yet connected to `App` |
+| `Library/MetadataService.cs` | Background ATL loader for the current track |
 | `Audio/AudioEngine.cs` | Decoder/output lifecycle and playback commands |
 | `Audio/PcmTapSampleProvider.cs` | PCM forwarding and mono visualization tap |
 | `Audio/SampleRingBuffer.cs` | Bounded transport between audio and DSP |
@@ -320,9 +320,9 @@ Current wiring gap: loaded repeat/shuffle values are not applied to `Playlist` d
 
 `TrackEntry` contains path, title, artist, album, duration, and metadata state. Defaults are filename title and `Unknown artist`.
 
-`MetadataService.LoadAsync` constructs an `ATL.Track` on a worker task, reads title/artist/album/duration, and applies fallbacks. Exceptions set state to `Failed`; original media files are never modified.
+`MetadataService.LoadAsync` constructs an `ATL.Track` on a worker task and returns title/artist/album/duration with fallbacks. Original media files are never modified.
 
-The service is currently isolated: `App` does not call it, so it is tested but not integrated into queue rendering.
+`App` starts a load only for the current playlist entry. Changing tracks cancels the previous request and stale completions are ignored. The worker never mutates `TrackEntry`: it places a completion in a concurrent queue, and the UI loop applies the result and changes `MetadataState` to `Loaded` or `Failed`. Entries that have not become current retain their filename/`Unknown artist` defaults.
 
 ## 17. Error boundaries
 
@@ -431,21 +431,20 @@ The shortcut working directory is `{userdocs}` so a first browser launch does no
 
 Priority gaps:
 
-1. Add a bounded metadata work queue for current/visible entries and apply results through main-loop events.
-2. Restore repeat and shuffle settings into `Playlist`.
-3. Implement Waveform or remove it from the public cycle until it exists.
-4. Implement fullscreen-visualizer layout or remove the nonfunctional control.
-5. Move EOF/error events into `Channel<AudioEvent>` so playlist state changes only on the UI loop.
-6. Distinguish inaccessible directories from empty directories.
-7. Add queue scrolling around selection instead of always rendering from index zero.
-8. Add grapheme/display-width-aware text layout.
-9. Replace the ring with a clearly proven SPSC implementation and add sustained concurrency tests.
-10. Add generated-WAV integration, optional WASAPI smoke, and terminal snapshot tests.
-11. Consider a self-contained installer or runtime bootstrapper.
-12. Split the growing `App` controller into input, application state, and layout components.
-13. Reuse two screen buffers and pooled ANSI output to reduce per-frame GC pressure.
-14. Avoid consuming partial FFT windows; skip DSP when the spectrum is not visible.
-15. Batch multichannel downmix/ring writes and make recursive library insertion incremental and cancellable.
+1. Restore repeat and shuffle settings into `Playlist`.
+2. Implement Waveform or remove it from the public cycle until it exists.
+3. Implement fullscreen-visualizer layout or remove the nonfunctional control.
+4. Move EOF/error events into `Channel<AudioEvent>` so playlist state changes only on the UI loop.
+5. Distinguish inaccessible directories from empty directories.
+6. Add queue scrolling around selection instead of always rendering from index zero.
+7. Add grapheme/display-width-aware text layout.
+8. Replace the ring with a clearly proven SPSC implementation and add sustained concurrency tests.
+9. Add generated-WAV integration, optional WASAPI smoke, and terminal snapshot tests.
+10. Consider a self-contained installer or runtime bootstrapper.
+11. Split the growing `App` controller into input, application state, and layout components.
+12. Reuse two screen buffers and pooled ANSI output to reduce per-frame GC pressure.
+13. Avoid consuming partial FFT windows; skip DSP when the spectrum is not visible.
+14. Batch multichannel downmix/ring writes and make recursive library insertion incremental and cancellable.
 
 ## 24. Extension points
 

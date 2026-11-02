@@ -36,7 +36,7 @@ flowchart LR
     App --> Buffer["ScreenBuffer"]
     Buffer --> Terminal["ANSI/VT terminal"]
     Settings["settings.json"] <--> App
-    ATL["ATL metadata service"] -. "пока не подключён к App" .-> Playlist
+    ATL["ATL metadata service"] -->|"только текущий трек"| App
 ```
 
 Runtime NuGet dependencies:
@@ -62,7 +62,7 @@ Test-only dependencies: xUnit, Microsoft.NET.Test.Sdk, coverlet collector, xUnit
 | `Library/Playlist.cs` | Queue navigation, selection, repeat, shuffle bag/history |
 | `Library/FileBrowser.cs` | Enumeration, filtering, sorting, recursive scan |
 | `Library/TrackEntry.cs` | Queue/media metadata model |
-| `Library/MetadataService.cs` | Изолированный ATL loader; пока не wired в `App` |
+| `Library/MetadataService.cs` | Фоновый ATL loader текущего трека |
 | `Audio/AudioEngine.cs` | Decoder/output lifecycle и playback commands |
 | `Audio/PcmTapSampleProvider.cs` | PCM forwarding и mono tap |
 | `Audio/SampleRingBuffer.cs` | Bounded sample transport между audio и DSP |
@@ -407,9 +407,9 @@ CLI FPS, recursive и no-visualizer меняют in-memory settings текуще
 
 `TrackEntry` содержит path, title, artist, album, duration и metadata state. Defaults берутся из имени файла/`Unknown artist`.
 
-`MetadataService.LoadAsync` создаёт `ATL.Track` на worker task, читает Title/Artist/Album/DurationMs и применяет fallbacks. Исключение переводит state в `Failed`.
+`MetadataService.LoadAsync` создаёт `ATL.Track` на worker task и возвращает Title/Artist/Album/Duration с fallback-значениями. Исходный файл не изменяется.
 
-Сервис не изменяет исходный файл. Однако текущий `App` не вызывает `MetadataService.LoadAsync`, поэтому эта подсистема пока является подготовленным, протестированным, но не интегрированным компонентом.
+`App` запускает чтение только для текущего элемента playlist. При смене трека предыдущий запрос отменяется, а устаревший результат игнорируется. Worker не изменяет `TrackEntry`: он кладёт результат в concurrent queue, после чего UI-цикл применяет его и устанавливает `MetadataState` в `Loaded` или `Failed`. Не запускавшиеся треки сохраняют значения из имени файла/`Unknown artist`.
 
 ## 17. Error handling
 
@@ -532,18 +532,17 @@ Inno Setup:
 
 Приоритетные разрывы текущей архитектуры:
 
-1. Подключить bounded metadata work queue к видимым/current entries и обновлять UI через main-loop events.
-2. Восстанавливать repeat/shuffle из settings в `Playlist`.
-3. Реализовать Waveform либо убрать режим из публичного enum/key cycle до реализации.
-4. Реализовать fullscreen visualizer для сохранённого flag либо убрать неработающий control.
-5. Перенести EOF/Error events в `Channel<AudioEvent>`/command queue, чтобы playlist state менялся только UI loop.
-6. Отличать inaccessible directory от legitimately empty directory.
-7. Добавить queue scrolling; wide queue сейчас рисует начало списка, а не viewport вокруг selection.
-8. Добавить grapheme/display-width aware text layout.
-9. Перевести ring implementation на чётко доказанный SPSC algorithm и добавить длительный concurrent stress test.
-10. Добавить integration WAV fixture, manual/optional WASAPI smoke test и terminal snapshot tests.
-11. Рассмотреть self-contained installer или автоматический bootstrap runtime вместо блокирующей prerequisite check.
-12. Разделить крупный `App` на controller/input/layout components по мере роста функций.
+1. Восстанавливать repeat/shuffle из settings в `Playlist`.
+2. Реализовать Waveform либо убрать режим из публичного enum/key cycle до реализации.
+3. Реализовать fullscreen visualizer для сохранённого flag либо убрать неработающий control.
+4. Перенести EOF/Error events в `Channel<AudioEvent>`/command queue, чтобы playlist state менялся только UI loop.
+5. Отличать inaccessible directory от legitimately empty directory.
+6. Добавить queue scrolling; wide queue сейчас рисует начало списка, а не viewport вокруг selection.
+7. Добавить grapheme/display-width aware text layout.
+8. Перевести ring implementation на чётко доказанный SPSC algorithm и добавить длительный concurrent stress test.
+9. Добавить integration WAV fixture, manual/optional WASAPI smoke test и terminal snapshot tests.
+10. Рассмотреть self-contained installer или автоматический bootstrap runtime вместо блокирующей prerequisite check.
+11. Разделить крупный `App` на controller/input/layout components по мере роста функций.
 
 ## 24. Точки расширения
 
