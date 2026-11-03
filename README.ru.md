@@ -2,7 +2,7 @@
 
 **Язык:** Русский · [English](README.md)
 
-![Иконка Yacplayer](assets/Yacplayer_icon.png)
+![Терминальный интерфейс Yacplayer](assets/Yacplayer_screenshot.png)
 
 Yacplayer — локальный музыкальный плеер для Windows с полноэкранным терминальным интерфейсом. Он воспроизводит аудио через WASAPI shared mode, показывает очередь и двухпанельный файловый браузер, строит FFT-спектр или waveform из реально декодированного PCM и управляется с клавиатуры.
 

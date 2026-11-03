@@ -85,6 +85,7 @@
 ### Упаковка
 
 - `assets/Yacplayer.ico` встроен через `ApplicationIcon`.
+- `assets/Yacplayer_screenshot.png` — скриншот продукта в начале обеих версий README.
 - `artifacts/publish/` — отслеживаемый framework-dependent дистрибутив для installer.
 - `NativeAotWinX64.pubxml` создаёт self-contained trimmed AOT в `artifacts/publish-aot/`.
 - `Yacplayer.iss` устанавливает приложение для текущего пользователя в `%LOCALAPPDATA%\Programs\Yacplayer`, поддерживает английский/русский мастер и проверяет .NET 10.
@@ -260,6 +261,7 @@ Installer собирается после обновления `artifacts/publis
 - Обновление версии 2026-11-03: project/assembly, CLI, installer, MSIX и документация синхронизированы на `1.26.3.11`; добавлены правило четырёхкомпонентной версии и regression-тест. Release build завершился с 0 warnings/0 errors, прошли 14/14 тестов, `--version` вывел `Yacplayer 1.26.3.11`, Store-identity пакет `Yacplayer-1.26.3.11-Store-win-x64.msix` создан успешно.
 - Обновление цвета заголовков панелей 2026-11-03: текст на ярко-зелёном фоне изменён с чёрного на белый. `dotnet build Yacplayer.sln -c Release --no-restore` завершился с 0 warnings/0 errors, `dotnet test Yacplayer.sln -c Release --no-build` прошёл 14/14 тестов, а Store-identity пакет `Yacplayer-1.26.3.11-Store-win-x64.msix` успешно пересобран. Ручная проверка TUI остаётся невыполненной.
 - Обновление версии в заголовке 2026-11-03: справа в верхней рамке теперь выводится `vA.B.C.D`, полученная из запущенной assembly. Release build завершился с 0 warnings/0 errors, прошли 14/14 тестов, а Store-identity пакет `Yacplayer-1.26.3.11-Store-win-x64.msix` успешно пересобран. Ручная проверка TUI остаётся невыполненной.
+- Обновление изображения README 2026-11-03: верхняя иконка в обеих языковых версиях заменена предоставленным пользователем PNG-скриншотом; целостность изображения и ссылки проверены без пересборки кода.
 - Ручной WASAPI/TUI/installer smoke для документальной правки не выполнялся.
 
 - Подготовка Microsoft Store 2026-11-03: self-contained x64 MSIX успешно собран через Windows SDK `MakeAppx` 10.0.26100.8249; в layout проверены manifest, сгенерированные assets, execution alias, MIT license, third-party notices и privacy policy.
