@@ -194,7 +194,9 @@ Allowlist: `.wav`, `.mp3`, `.m4a`, `.aac`, `.wma`, `.flac`.
 
 ### Navigation
 
-`App` stores path, entries, selected index, scroll offset, and a virtual-drive-level flag. Index `0` is reserved for `[..]` in normal directories and `[This PC]` at the virtual root. `Backspace` and `Enter` on `[..]` share the same parent transition. Above a drive root, ready drives from `DriveInfo.GetDrives()` are displayed.
+`App` stores path, entries, selected index, a `ListViewport`, and a virtual-drive-level flag. Index `0` is reserved for `[..]` in normal directories and `[This PC]` at the virtual root. `Backspace` and `Enter` on `[..]` share the same parent transition. Above a drive root, ready drives from `DriveInfo.GetDrives()` are displayed.
+
+The file list, main queue, and browser-side queue each own an independent `ListViewport`. It keeps a target index visible with a one-row margin, clamps its offset after collection/window-size changes, and never reorders the underlying collection. The main queue follows `SelectedIndex` (which playback also synchronizes to `CurrentIndex`); the browser-side informational queue follows `CurrentIndex` when available.
 
 ### Recursive scan
 
@@ -443,11 +445,10 @@ Priority gaps:
 2. Implement fullscreen-visualizer layout or remove the nonfunctional control.
 3. Move EOF/error events into `Channel<AudioEvent>` so playlist state changes only on the UI loop.
 4. Distinguish inaccessible directories from empty directories.
-5. Add queue scrolling around selection instead of always rendering from index zero.
-6. Add grapheme/display-width-aware text layout.
-7. Replace the ring with a clearly proven SPSC implementation and add sustained concurrency tests.
-8. Add generated-WAV integration, optional WASAPI smoke, and terminal snapshot tests.
-9. Consider a self-contained installer or runtime bootstrapper.
+5. Add grapheme/display-width-aware text layout.
+6. Replace the ring with a clearly proven SPSC implementation and add sustained concurrency tests.
+7. Add generated-WAV integration, optional WASAPI smoke, and terminal snapshot tests.
+8. Consider a self-contained installer or runtime bootstrapper.
 10. Split the growing `App` controller into input, application state, and layout components.
 11. Reuse two screen buffers and pooled ANSI output to reduce per-frame GC pressure.
 12. Avoid consuming partial FFT windows; skip spectrum analysis while playback is inactive.

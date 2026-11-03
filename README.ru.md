@@ -16,7 +16,7 @@ Yacplayer — локальный музыкальный плеер для Window
 - воспроизведение через NAudio 3.3 и `WasapiPlayer` в shared mode;
 - play, pause/resume, stop, seek ±5 секунд, next/previous, auto-next;
 - громкость 0–100% и mute;
-- очередь, удаление без удаления файла, repeat Off/All/One и shuffle bag;
+- очередь, удаление без удаления файла, repeat Off/All/One, shuffle bag и автоматическая прокрутка viewport, удерживающая выбранный/текущий трек на экране;
 - запуск с файлом или каталогом;
 - встроенный Midnight Commander-подобный браузер: каталоги, `[..]`, список дисков `This PC`, добавление файла/каталога;
 - адаптивный ANSI/VT-интерфейс с цветными панелями, белыми надписями на зелёном фоне заголовков, текущей версией справа в верхней рамке и diff-rendering с полной перерисовкой строк для Unicode переменной ширины;
@@ -171,7 +171,7 @@ dotnet build Yacplayer.sln -c Release
 dotnet test Yacplayer.sln -c Release
 ```
 
-Текущий набор содержит 16 unit-тестов без требования аудиоустройства: CLI, четырёхкомпонентная assembly version, playlist, shuffle, ring buffer wrapping/latest reads, pre-volume PCM tap, ANSI/true-color diff styles, batching и обновление Unicode-строк, settings, FFT, metadata fallback и browser filtering/sorting.
+Текущий набор содержит 18 unit-тестов без требования аудиоустройства: CLI, четырёхкомпонентная assembly version, playlist, shuffle, прокрутка/clamp list viewport, ring buffer wrapping/latest reads, pre-volume PCM tap, ANSI/true-color diff styles, batching и обновление Unicode-строк, settings, FFT, metadata fallback и browser filtering/sorting.
 
 Публикация framework-dependent win-x64:
 

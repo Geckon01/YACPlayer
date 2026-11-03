@@ -21,7 +21,9 @@ public sealed class App(Arguments arguments)
     private string _browserPath = Environment.CurrentDirectory;
     private IReadOnlyList<BrowserEntry> _browserEntries = [];
     private int _browserSelected;
-    private int _browserScroll;
+    private readonly ListViewport _browserViewport = new();
+    private readonly ListViewport _queueViewport = new();
+    private readonly ListViewport _browserQueueViewport = new();
     private bool _browserAtDrives;
     private readonly ConcurrentQueue<MetadataCompletion> _metadataCompletions = new();
     private TrackEntry? _metadataTarget;
@@ -199,7 +201,7 @@ public sealed class App(Arguments arguments)
     {
         _message = $"Loading {path}";
         var entries = await FileBrowser.EnumerateAsync(path, ct);
-        _browserPath = path; _browserEntries = entries; _browserSelected = 0; _browserScroll = 0; _browserAtDrives = false;
+        _browserPath = path; _browserEntries = entries; _browserSelected = 0; _browserViewport.Reset(); _browserAtDrives = false;
         _settings.LastDirectory = path;
         _message = entries.Count == 0 ? "No audio files or subdirectories (use [..] to go back)" : $"{entries.Count} item(s)";
     }
@@ -214,7 +216,7 @@ public sealed class App(Arguments arguments)
 
     private void ShowDrives()
     {
-        _browserAtDrives = true; _browserPath = "This PC"; _browserSelected = 0; _browserScroll = 0;
+        _browserAtDrives = true; _browserPath = "This PC"; _browserSelected = 0; _browserViewport.Reset();
         _browserEntries = DriveInfo.GetDrives().Where(drive => drive.IsReady).Select(drive => new BrowserEntry(drive.RootDirectory.FullName, true)).ToArray();
         _message = $"{_browserEntries.Count} drive(s)";
     }
@@ -292,10 +294,13 @@ public sealed class App(Arguments arguments)
 
             DrawBox(screen, queueLeft, 3, width - 1, height - 2, $" Queue ({_playlist.Items.Count}) ", CellColor.Green);
             var queueRows = Math.Max(1, height - 8);
-            for (var row = 0; row < queueRows && row < _playlist.Items.Count; row++)
+            _queueViewport.EnsureVisible(_playlist.SelectedIndex, _playlist.Items.Count, queueRows);
+            for (var row = 0; row < queueRows; row++)
             {
-                var item = _playlist.Items[row]; var active = row == _playlist.CurrentIndex; var selected = row == _playlist.SelectedIndex;
-                var text = $"{(active ? '>' : ' ')} {row + 1,2}. {item.Title}";
+                var itemIndex = _queueViewport.Offset + row;
+                if (itemIndex >= _playlist.Items.Count) break;
+                var item = _playlist.Items[itemIndex]; var active = itemIndex == _playlist.CurrentIndex; var selected = itemIndex == _playlist.SelectedIndex;
+                var text = $"{(active ? '>' : ' ')} {itemIndex + 1,2}. {item.Title}";
                 screen.Write(queueLeft + 2, 5 + row, Fit(text, width - queueLeft - 4), active ? CellColor.Black : selected ? CellColor.Yellow : CellColor.Default, active ? CellBackground.Green : CellBackground.Default, active);
             }
 
@@ -423,11 +428,10 @@ public sealed class App(Arguments arguments)
         screen.Write(2, top + 2, "Name", CellColor.Cyan);
         screen.Write(Math.Max(2, split - 12), top + 2, "Type", CellColor.Cyan);
         var listTop = top + 3; var rows = Math.Max(1, bottom - listTop);
-        if (_browserSelected < _browserScroll) _browserScroll = _browserSelected;
-        if (_browserSelected >= _browserScroll + rows) _browserScroll = _browserSelected - rows + 1;
+        _browserViewport.EnsureVisible(_browserSelected, _browserEntries.Count + 1, rows);
         for (var row = 0; row < rows; row++)
         {
-            var index = row + _browserScroll;
+            var index = row + _browserViewport.Offset;
             if (index > _browserEntries.Count) break;
             var selected = index == _browserSelected;
             var color = selected ? CellColor.Yellow : CellColor.Default;
@@ -447,10 +451,14 @@ public sealed class App(Arguments arguments)
         if (split < width)
         {
             var queueWidth = Math.Max(1, width - split - 4); var queueRows = Math.Max(1, bottom - top - 2);
-            for (var row = 0; row < queueRows && row < _playlist.Items.Count; row++)
+            var queueTarget = _playlist.CurrentIndex ?? _playlist.SelectedIndex;
+            _browserQueueViewport.EnsureVisible(queueTarget, _playlist.Items.Count, queueRows);
+            for (var row = 0; row < queueRows; row++)
             {
-                var marker = row == _playlist.CurrentIndex ? "*" : " ";
-                screen.Write(split + 2, top + 2 + row, Fit($"{marker} {row + 1,3} {_playlist.Items[row].Title}", queueWidth), row == _playlist.CurrentIndex ? CellColor.Green : CellColor.Default);
+                var index = _browserQueueViewport.Offset + row;
+                if (index >= _playlist.Items.Count) break;
+                var marker = index == _playlist.CurrentIndex ? "*" : " ";
+                screen.Write(split + 2, top + 2 + row, Fit($"{marker} {index + 1,3} {_playlist.Items[index].Title}", queueWidth), index == _playlist.CurrentIndex ? CellColor.Green : CellColor.Default);
             }
             if (_playlist.Items.Count == 0) screen.Write(split + 2, top + 2, "Queue is empty");
         }

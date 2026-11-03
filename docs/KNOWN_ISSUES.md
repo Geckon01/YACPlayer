@@ -91,7 +91,6 @@ Recommended action: define representative scenarios and capture baselines with `
 - **P2 — unfinished fullscreen mode:** the fullscreen-visualizer control lacks a dedicated layout. Implement it or remove the control until supported.
 - **P3 — metadata scope:** metadata is loaded only for the current track and applied on the UI loop. Unplayed queue entries intentionally retain lightweight fallback values; bitrate is still unavailable.
 - **P2 — browser diagnostics:** inaccessible directories and empty directories share the same user-facing result. Preserve and display enumeration errors without crashing.
-- **P2 — queue scrolling:** the queue renders from its first item instead of keeping the selected/current item visible in long queues.
 - **P2 — Unicode layout:** clipping is based on .NET character positions rather than terminal grapheme/display width. Combining marks, emoji, and East Asian wide characters can still misalign borders and columns. Rows containing likely variable-width Unicode are now erased and fully repainted as a low-cost stale-glyph mitigation, but this is not a complete width-aware layout solution.
 - **P2 — controller size:** `App` owns input routing, browser state, playback orchestration, DSP sampling, persistence, and layout. Split it into application state/reducer, input commands, services, and view/layout code before adding substantially more features.
 - **P3 — format support contract:** the browser extension allowlist and the actual decoder capabilities can diverge. Each advertised format needs decoder verification and an intelligible open-error path.
@@ -246,7 +245,6 @@ Delay-based polling добавляет время работы к задержк
 - **P2 — незавершённый fullscreen:** отдельная полноэкранная компоновка визуализатора не реализована; её нужно закончить или временно убрать управление `H`.
 - **P3 — область метаданных:** метаданные читаются только для текущего трека и применяются в UI-цикле. Остальные элементы намеренно используют лёгкие fallback-значения; bitrate пока отсутствует.
 - **P2 — диагностика браузера:** access denied должен отличаться от пустой папки и не приводить к падению.
-- **P2 — прокрутка очереди:** текущий/выбранный трек должен оставаться видимым в длинной очереди.
 - **P2 — Unicode:** расчёт по позициям .NET не учитывает grapheme/display width; combining marks, emoji и wide characters всё ещё могут ломать выравнивание. Строки с вероятным Unicode переменной ширины теперь очищаются и полностью перерисовываются как дешёвая защита от оставшихся символов, но это не заменяет полноценный width-aware layout.
 - **P2 — перегруженный `App`:** input, browser, playback, DSP, persistence и layout следует разделить до значительного расширения функций.
 - **P3 — контракт форматов:** расширения браузера и реальные возможности decoder могут расходиться; каждый заявленный формат требует проверки.

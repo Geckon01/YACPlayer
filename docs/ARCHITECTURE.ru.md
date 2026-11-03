@@ -213,12 +213,14 @@ Allowlist: `.wav`, `.mp3`, `.m4a`, `.aac`, `.wma`, `.flac`.
 
 ### 9.2 Navigation state
 
-`App` хранит browser path, entries, selected index, scroll offset и признак виртуального уровня дисков. Index `0` всегда зарезервирован:
+`App` хранит browser path, entries, selected index, `ListViewport` и признак виртуального уровня дисков. Index `0` всегда зарезервирован:
 
 - обычный каталог: `[..]`;
 - виртуальный root: `[This PC]`.
 
 `Backspace` и `Enter` на `[..]` вызывают одинаковый переход. Выше drive root строится список `DriveInfo.GetDrives().Where(IsReady)`.
+
+File list, основная queue и вспомогательная queue в browser имеют независимые `ListViewport`. Viewport удерживает target index видимым с запасом в одну строку, clamp-ит offset после изменения коллекции/высоты окна и не переставляет элементы исходной коллекции. Основная queue следует за `SelectedIndex` (playback также синхронизирует его с `CurrentIndex`), информационная queue в browser следует за `CurrentIndex`, когда он задан.
 
 ### 9.3 Recursive scan
 
@@ -544,12 +546,11 @@ Inno Setup:
 2. Реализовать fullscreen visualizer для сохранённого flag либо убрать неработающий control.
 3. Перенести EOF/Error events в `Channel<AudioEvent>`/command queue, чтобы playlist state менялся только UI loop.
 4. Отличать inaccessible directory от legitimately empty directory.
-5. Добавить queue scrolling; wide queue сейчас рисует начало списка, а не viewport вокруг selection.
-6. Добавить grapheme/display-width aware text layout.
-7. Перевести ring implementation на чётко доказанный SPSC algorithm и добавить длительный concurrent stress test.
-8. Добавить integration WAV fixture, manual/optional WASAPI smoke test и terminal snapshot tests.
-9. Рассмотреть self-contained installer или автоматический bootstrap runtime вместо блокирующей prerequisite check.
-10. Разделить крупный `App` на controller/input/layout components по мере роста функций.
+5. Добавить grapheme/display-width aware text layout.
+6. Перевести ring implementation на чётко доказанный SPSC algorithm и добавить длительный concurrent stress test.
+7. Добавить integration WAV fixture, manual/optional WASAPI smoke test и terminal snapshot tests.
+8. Рассмотреть self-contained installer или автоматический bootstrap runtime вместо блокирующей prerequisite check.
+9. Разделить крупный `App` на controller/input/layout components по мере роста функций.
 
 ## 24. Точки расширения
 

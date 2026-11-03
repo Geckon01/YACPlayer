@@ -30,7 +30,7 @@ Do not remove or weaken this contract. Its purpose is to let a new agent underst
 - Metadata: ATL 7.19.0, loaded lazily for the current track only.
 - Persistence: per-user JSON at `%LOCALAPPDATA%\Yacplayer\settings.json`.
 - Distribution: framework-dependent win-x64 publish, optional win-x64 Native AOT publish, an Inno Setup 6 installer, and a self-contained x64 MSIX build for Microsoft Store.
-- Automated tests: 16 xUnit tests that avoid real audio hardware.
+- Automated tests: 18 xUnit tests that avoid real audio hardware.
 - License: MIT. The repository and user-facing documentation carry an AI-assisted/generated-code notice.
 - Public documentation is English-first with Russian counterparts.
 
@@ -52,6 +52,7 @@ Do not remove or weaken this contract. Its purpose is to let a new agent underst
 - Shuffle uses a bag to avoid repeats within one cycle and a history stack for Previous.
 - Removing a queue entry never deletes a filesystem object.
 - Queue duplicates are permitted by `Playlist`, but browser add/play operations deduplicate paths case-insensitively.
+- Independent `ListViewport` instances keep the selected/current item visible in the main queue, browser file list, and browser-side queue without reordering their collections.
 
 ### File browser
 
@@ -232,7 +233,6 @@ The detailed backlog is [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md). Keep this 
 - Implement the `H` fullscreen-visualizer layout or remove the nonfunctional setting/control.
 - Add a focused waveform rendering test that preserves the intentional `.` glyph and min/max envelope behavior.
 - Remove `Tab` focus and `/` search from CLI help until implemented, or implement the missing controls. `App.HandleAsync` currently handles neither.
-- Add queue scrolling so selected/current entries remain visible in long queues.
 - Distinguish an inaccessible browser directory from an empty one.
 - Handle terminal grapheme/display width instead of assuming one UTF-16 `char` per column.
 - Split the oversized `App` controller into state/commands, services, and view/layout components before major feature growth.
@@ -296,9 +296,10 @@ Update this section after every material change.
 - Panel-title color update on 2026-11-03: changed text on bright-green title backgrounds from black to white. `dotnet build Yacplayer.sln -c Release --no-restore` succeeded with 0 warnings/0 errors, `dotnet test Yacplayer.sln -c Release --no-build` passed 14/14 tests, and the Store-identity `Yacplayer-1.26.3.11-Store-win-x64.msix` was rebuilt successfully. Manual TUI inspection remains pending.
 - Header-version update on 2026-11-03: the top-right frame now derives and displays `vA.B.C.D` from the running assembly. Release build succeeded with 0 warnings/0 errors, 14/14 tests passed, and the Store-identity `Yacplayer-1.26.3.11-Store-win-x64.msix` was rebuilt successfully. Manual TUI inspection remains pending.
 - README artwork update on 2026-11-03: replaced the top icon in both language variants with the user-supplied PNG screenshot; image integrity and links were checked without rebuilding code.
-- Installer release refresh on 2026-11-03: republished the framework-dependent win-x64 application into `artifacts/publish/`, confirmed `Yacplayer.exe --version` reports `1.26.3.11`, and compiled `artifacts/installer/Yacplayer-1.26.3.11-win-x64-setup.exe` successfully with Inno Setup 6.7.1. The current installer SHA-256 is `C0BBCC261111B1E6BFDCDA8C8DB897A6CCC730B518F159D3B5A241C9BD5130FD`. Installation/uninstallation smoke testing remains pending.
+- Installer release refresh on 2026-11-03: republished the framework-dependent win-x64 application into `artifacts/publish/`, confirmed `Yacplayer.exe --version` reports `1.26.3.11`, and compiled `artifacts/installer/Yacplayer-1.26.3.11-win-x64-setup.exe` successfully with Inno Setup 6.7.1. The current installer SHA-256 is `6A9A00B852824252FD90FDDE60A74D7375AB1B388EB272B21CE8E09386EDC436`. Installation/uninstallation smoke testing remains pending.
 - Unicode diff mitigation on 2026-11-03: rows containing likely wide/zero-width Unicode in either adjacent frame are erased and fully repainted while ordinary rows retain run-level diffing; terminal autowrap is disabled during the alternate-screen session. Added a focused regression test; `dotnet build Yacplayer.sln -c Release --no-restore` succeeded with 0 warnings/0 errors and `dotnet test Yacplayer.sln -c Release --no-build` passed 15/15 tests. Manual mixed-width TUI smoke testing remains pending.
-- Spectrum gradient update on 2026-11-03: replaced the three hard color thresholds with an interpolated ANSI true-color green/yellow/red gradient while retaining the yellow top marker; added true-color escape coverage. Final Release build succeeded with 0 warnings/0 errors, 16/16 tests passed, the installer and Store-identity MSIX were rebuilt successfully, and the MSIX SHA-256 is `80D6E3C05051CA3DA96D92E318074F2A48D31F011AAE46F27F42CDE3BE64D16C`. Manual visual gradient and mixed-width TUI smoke testing remains pending.
+- Spectrum gradient update on 2026-11-03: replaced the three hard color thresholds with an interpolated ANSI true-color green/yellow/red gradient while retaining the yellow top marker; added true-color escape coverage. Final Release build succeeded with 0 warnings/0 errors and 16/16 tests passed. Manual visual gradient and mixed-width TUI smoke testing remains pending.
+- Shared list viewport update on 2026-11-04: the file browser, main queue, and browser-side queue now render independent moving windows that keep their target selection/current item visible with a one-row margin; collection order remains unchanged. Added viewport movement and clamp regression tests; `dotnet build Yacplayer.sln -c Release --no-restore` succeeded with 0 warnings/0 errors and `dotnet test Yacplayer.sln -c Release --no-build` passed 18/18 tests. The installer and Store-identity MSIX were rebuilt successfully; the current MSIX SHA-256 is `8C4B16B234DE4F28702749EAFEBCF245535EB039FE8867CC6E3FF26A89D49DDE`. Manual long-queue navigation and automatic-EOF smoke testing remains pending.
 - Microsoft Store preparation on 2026-11-03: the self-contained x64 MSIX was built successfully with Windows SDK `MakeAppx` 10.0.26100.8249; the manifest, generated assets, execution alias, MIT license, third-party notices, and privacy policy were inspected in the package layout.
 - Verification after MSIX changes: `dotnet build Yacplayer.sln -c Release --no-restore` succeeded with 0 errors and one `NU1900` warning because NuGet vulnerability metadata was unreachable; `dotnet test Yacplayer.sln -c Release --no-build` passed 12/12 tests.
 - Partner Center rejected the first Store build because the supplied `Publisher` value had been truncated, producing the wrong package family name. The full Publisher from the Product identity page, plus `Name` and `PublisherDisplayName`, were applied through the ignored local override and `Yacplayer-1.0.0.0-Store-win-x64.msix` was rebuilt on 2026-11-03. Windows `PackageFamilyNameFromId` confirmed the expected PFN `geckon01.YacPlayer_42xf8azg8zfh0`; no credential or signing material was added to tracked files.
