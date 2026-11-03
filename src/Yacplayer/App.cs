@@ -352,11 +352,23 @@ public sealed class App(Arguments arguments)
             for (var level = 0; level < barHeight; level++)
             {
                 var ratio = level / (double)Math.Max(1, height - 1);
-                var color = ratio switch { >= .72 => CellColor.Red, >= .42 => CellColor.Yellow, _ => CellColor.Green };
-                screen.Write(left + x, bottom - level, "█", color);
+                screen.Write(left + x, bottom - level, "█", SpectrumGradient(ratio));
             }
             if (barHeight > 0) screen.Write(left + x, Math.Max(top, bottom - barHeight), "-", CellColor.Yellow, bold: true);
         }
+    }
+
+    private static CellColor SpectrumGradient(double ratio)
+    {
+        ratio = Math.Clamp(ratio, 0, 1);
+        if (ratio <= 0.65)
+        {
+            var position = ratio / 0.65;
+            return CellColor.Rgb((int)Math.Round(230 * position), 190, 0);
+        }
+
+        var upperPosition = (ratio - 0.65) / 0.35;
+        return CellColor.Rgb(230, (int)Math.Round(190 - 145 * upperPosition), 0);
     }
 
     private string VisualizerTitle() => _settings.VisualizerMode switch
@@ -446,7 +458,9 @@ public sealed class App(Arguments arguments)
         screen.Write(1, height - 1, Fit(_message, width - 2));
     }
 
-    private static void DrawBox(ScreenBuffer screen, int left, int top, int right, int bottom, string title, CellColor color = CellColor.Cyan)
+    private static void DrawBox(ScreenBuffer screen, int left, int top, int right, int bottom, string title) => DrawBox(screen, left, top, right, bottom, title, CellColor.Cyan);
+
+    private static void DrawBox(ScreenBuffer screen, int left, int top, int right, int bottom, string title, CellColor color)
     {
         if (right - left < 4 || bottom - top < 2) return;
         var borderColor = color == CellColor.Green ? CellColor.BrightGreen : color;

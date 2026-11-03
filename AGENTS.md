@@ -30,7 +30,7 @@ Do not remove or weaken this contract. Its purpose is to let a new agent underst
 - Metadata: ATL 7.19.0, loaded lazily for the current track only.
 - Persistence: per-user JSON at `%LOCALAPPDATA%\Yacplayer\settings.json`.
 - Distribution: framework-dependent win-x64 publish, optional win-x64 Native AOT publish, an Inno Setup 6 installer, and a self-contained x64 MSIX build for Microsoft Store.
-- Automated tests: 14 xUnit tests that avoid real audio hardware.
+- Automated tests: 16 xUnit tests that avoid real audio hardware.
 - License: MIT. The repository and user-facing documentation carry an AI-assisted/generated-code notice.
 - Public documentation is English-first with Russian counterparts.
 
@@ -65,12 +65,12 @@ Do not remove or weaken this contract. Its purpose is to let a new agent underst
 ### Terminal UI
 
 - `TerminalSession` enters the alternate screen, hides the cursor, and restores terminal state on normal disposal.
-- Every frame is first composed into a styled `ScreenBuffer`; `Diff` emits only changed runs with ANSI cursor/style sequences.
+- Every frame is first composed into a styled `ScreenBuffer`; `Diff` emits only changed runs with ANSI cursor/style sequences, except rows with likely variable-width Unicode, which are erased and fully repainted.
 - The wide layout contains header, Now Playing, Queue, visualizer, Playback, and Audio Info panels. Compact terminals receive a reduced layout.
 - Green panel-title backgrounds use white bold text while their borders remain bright green.
 - The top-right header shows the running assembly version as `vA.B.C.D` and hides it only when the terminal is too narrow.
 - The progress bar uses solid green `█` cells and a `·` remainder.
-- Spectrum columns use `█`, with green/yellow/red levels based on height and a yellow top marker.
+- Spectrum columns use `█`, with a smooth ANSI true-color green/yellow/red gradient based on height and a yellow top marker.
 - `V` cycles Spectrum → Waveform → Off. Switching mode resets visualization backlog, and FFT is not calculated in Waveform or Off modes.
 - The waveform draws a normalized min/max envelope with green `.` characters. The dot glyph is the current intentional design.
 
@@ -296,7 +296,9 @@ Update this section after every material change.
 - Panel-title color update on 2026-11-03: changed text on bright-green title backgrounds from black to white. `dotnet build Yacplayer.sln -c Release --no-restore` succeeded with 0 warnings/0 errors, `dotnet test Yacplayer.sln -c Release --no-build` passed 14/14 tests, and the Store-identity `Yacplayer-1.26.3.11-Store-win-x64.msix` was rebuilt successfully. Manual TUI inspection remains pending.
 - Header-version update on 2026-11-03: the top-right frame now derives and displays `vA.B.C.D` from the running assembly. Release build succeeded with 0 warnings/0 errors, 14/14 tests passed, and the Store-identity `Yacplayer-1.26.3.11-Store-win-x64.msix` was rebuilt successfully. Manual TUI inspection remains pending.
 - README artwork update on 2026-11-03: replaced the top icon in both language variants with the user-supplied PNG screenshot; image integrity and links were checked without rebuilding code.
-- Installer release refresh on 2026-11-03: republished the framework-dependent win-x64 application into `artifacts/publish/`, confirmed `Yacplayer.exe --version` reports `1.26.3.11`, and compiled `artifacts/installer/Yacplayer-1.26.3.11-win-x64-setup.exe` successfully with Inno Setup 6.7.1. The installer SHA-256 is `20519588285C691EC00E7B9CE98FD74B6435F3CFAE8B3A5598A187F5A25B9B96`; 14/14 tests passed afterward. Installation/uninstallation smoke testing remains pending.
+- Installer release refresh on 2026-11-03: republished the framework-dependent win-x64 application into `artifacts/publish/`, confirmed `Yacplayer.exe --version` reports `1.26.3.11`, and compiled `artifacts/installer/Yacplayer-1.26.3.11-win-x64-setup.exe` successfully with Inno Setup 6.7.1. The current installer SHA-256 is `C0BBCC261111B1E6BFDCDA8C8DB897A6CCC730B518F159D3B5A241C9BD5130FD`. Installation/uninstallation smoke testing remains pending.
+- Unicode diff mitigation on 2026-11-03: rows containing likely wide/zero-width Unicode in either adjacent frame are erased and fully repainted while ordinary rows retain run-level diffing; terminal autowrap is disabled during the alternate-screen session. Added a focused regression test; `dotnet build Yacplayer.sln -c Release --no-restore` succeeded with 0 warnings/0 errors and `dotnet test Yacplayer.sln -c Release --no-build` passed 15/15 tests. Manual mixed-width TUI smoke testing remains pending.
+- Spectrum gradient update on 2026-11-03: replaced the three hard color thresholds with an interpolated ANSI true-color green/yellow/red gradient while retaining the yellow top marker; added true-color escape coverage. Final Release build succeeded with 0 warnings/0 errors, 16/16 tests passed, the installer and Store-identity MSIX were rebuilt successfully, and the MSIX SHA-256 is `80D6E3C05051CA3DA96D92E318074F2A48D31F011AAE46F27F42CDE3BE64D16C`. Manual visual gradient and mixed-width TUI smoke testing remains pending.
 - Microsoft Store preparation on 2026-11-03: the self-contained x64 MSIX was built successfully with Windows SDK `MakeAppx` 10.0.26100.8249; the manifest, generated assets, execution alias, MIT license, third-party notices, and privacy policy were inspected in the package layout.
 - Verification after MSIX changes: `dotnet build Yacplayer.sln -c Release --no-restore` succeeded with 0 errors and one `NU1900` warning because NuGet vulnerability metadata was unreachable; `dotnet test Yacplayer.sln -c Release --no-build` passed 12/12 tests.
 - Partner Center rejected the first Store build because the supplied `Publisher` value had been truncated, producing the wrong package family name. The full Publisher from the Product identity page, plus `Name` and `PublisherDisplayName`, were applied through the ignored local override and `Yacplayer-1.0.0.0-Store-win-x64.msix` was rebuilt on 2026-11-03. Windows `PackageFamilyNameFromId` confirmed the expected PFN `geckon01.YacPlayer_42xf8azg8zfh0`; no credential or signing material was added to tracked files.

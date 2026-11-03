@@ -19,8 +19,8 @@ Implemented:
 - queue removal without deleting files, repeat Off/All/One, and shuffle bag navigation;
 - startup with either a file or a directory;
 - built-in Midnight Commander-style browser with directories, `[..]`, a `This PC` drive list, and file/folder queue insertion;
-- adaptive ANSI/VT interface with colored panels, white captions on green title backgrounds, the current version in the top-right header, and differential rendering;
-- switchable Hann-windowed FFT spectrum, `.` waveform, and disabled visualizer modes; spectrum and waveform amplitude are independent of output volume and mute;
+- adaptive ANSI/VT interface with colored panels, white captions on green title backgrounds, the current version in the top-right header, and differential rendering with full-row refresh for variable-width Unicode;
+- switchable Hann-windowed FFT spectrum with a smooth true-color green/yellow/red gradient, `.` waveform, and disabled visualizer modes; spectrum and waveform amplitude are independent of output volume and mute;
 - per-user JSON settings;
 - CLI, Release publishing, and an Inno Setup installer;
 - reproducible self-contained MSIX packaging for Microsoft Store submission;
@@ -171,7 +171,7 @@ dotnet build Yacplayer.sln -c Release
 dotnet test Yacplayer.sln -c Release
 ```
 
-The current suite contains 14 device-independent unit tests covering CLI parsing, four-part assembly versioning, playlist behavior, shuffle, ring-buffer wrapping/latest reads, pre-volume PCM tapping, ANSI diff/styles/batching, settings, FFT, metadata fallback, and browser filtering/sorting.
+The current suite contains 16 device-independent unit tests covering CLI parsing, four-part assembly versioning, playlist behavior, shuffle, ring-buffer wrapping/latest reads, pre-volume PCM tapping, ANSI/true-color diff styles, batching and Unicode-row refresh, settings, FFT, metadata fallback, and browser filtering/sorting.
 
 Framework-dependent win-x64 publish:
 

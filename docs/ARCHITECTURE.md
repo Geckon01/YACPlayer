@@ -265,7 +265,7 @@ flowchart LR
 
 `SpectrumAnalyzer` allocates FFT buffers, the transform, and the Hann window once. Each analysis reads an FFT-sized sample block, applies the window, performs complex forward FFT, maps each output band to logarithmic frequency limits, finds peak magnitude within matching bins, and normalizes to 0–1.
 
-The UI uses 64 bands and interpolates them to the spectrum-panel width. Vertical levels are green, yellow, and red; a yellow marker is drawn at the current bar height. The marker is not a time-based peak-hold buffer.
+The UI uses 64 bands and interpolates them to the spectrum-panel width. Vertical levels use ANSI true color with a continuous green-to-yellow-to-red gradient; a yellow marker is drawn at the current bar height. The marker is not a time-based peak-hold buffer.
 
 Waveform mode reads up to 4096 newest mono PCM samples and applies per-frame visual gain so the shape remains visible at low playback volume without changing audio. Each terminal column receives the minimum/maximum envelope of its sample range, mapped around the vertical center and drawn with green `.` characters. Near-silence is left blank instead of amplifying noise. Off mode performs neither FFT nor waveform sampling. The panel title and detail label follow the selected mode.
 
@@ -275,17 +275,17 @@ Current caveat: a short ring read is consumed and then causes cleared bands. An 
 
 ### Terminal session
 
-Interactive construction sends alternate-screen, hide-cursor, and clear-screen sequences. Disposal resets SGR, restores the cursor, and returns to the primary screen. Redirected stdout produces no terminal-control output.
+Interactive construction enters the alternate screen, disables automatic line wrapping, hides the cursor, and clears the screen. Disposal resets SGR, restores line wrapping and the cursor, and returns to the primary screen. Redirected stdout produces no terminal-control output.
 
 ### Cell model
 
 A `Cell` stores one UTF-16 `char`, foreground, background, and bold state. `ScreenBuffer.Write` clips coordinates and replaces ESC/control characters with spaces, preventing current metadata/path text from injecting raw ANSI sequences.
 
-One `char` is assumed to occupy one terminal column. Grapheme clusters, surrogate pairs, and East Asian wide-character widths are not measured separately.
+One `char` is still assumed to occupy one terminal column. Grapheme clusters, surrogate pairs, and East Asian wide-character widths are not measured separately; writes containing likely wide/zero-width Unicode mark their row for conservative repainting.
 
 ### Differential rendering
 
-`Diff(previous)` skips equal cells and combines adjacent changed cells with identical style into horizontal runs. Each run receives one cursor-position escape and only necessary SGR changes. Resizing changes buffer dimensions and forces a full redraw.
+`Diff(previous)` skips equal cells and combines adjacent changed cells with identical style into horizontal runs. Each run receives one cursor-position escape and only necessary SGR changes. A row containing likely variable-width Unicode in either the current or previous frame is erased and repainted completely to remove orphaned terminal glyphs. Resizing changes buffer dimensions and forces a full redraw.
 
 Current caveat: a new `ScreenBuffer`, cell array, `StringBuilder`, and ANSI string are created for every frame. Reusable double buffers and pooled output are the main GC optimization opportunity.
 

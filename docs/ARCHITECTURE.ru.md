@@ -320,7 +320,7 @@ flowchart LR
 6. Находит peak magnitude в соответствующих bins.
 7. Применяет `log10(1 + peak) / 3` и clamp `0..1`.
 
-UI использует 64 output bands и интерполирует их на фактическую ширину spectrum panel. Цвет зависит от вертикального уровня: зелёный, жёлтый, красный; над bar рисуется жёлтый peak marker. Это визуальный marker текущей высоты, не временной peak-hold buffer.
+UI использует 64 output bands и интерполирует их на фактическую ширину spectrum panel. Для вертикального уровня вычисляется непрерывный ANSI true-color градиент от зелёного через жёлтый к красному; над bar рисуется жёлтый peak marker. Это визуальный marker текущей высоты, не временной peak-hold buffer.
 
 Режим Waveform читает до 4096 новейших mono PCM samples и применяет визуальное усиление кадра, поэтому форма видна при низкой громкости без изменения звука. Для каждой колонки вычисляется min/max envelope соответствующего диапазона samples, отображается относительно вертикального центра и рисуется зелёными `.`. Почти полная тишина остаётся пустой, чтобы не усиливать шум. В режиме Off не выполняется ни FFT, ни waveform sampling. Заголовок и информационная строка панели соответствуют выбранному режиму.
 
@@ -331,10 +331,11 @@ UI использует 64 output bands и интерполирует их на 
 В interactive mode constructor отправляет:
 
 - `CSI ?1049h` — alternate screen;
+- `CSI ?7l` — отключить automatic line wrapping;
 - `CSI ?25l` — hide cursor;
 - `CSI 2J` — clear.
 
-Dispose отправляет SGR reset, show cursor и leave alternate screen. При redirected stdout session ничего не пишет.
+Dispose отправляет SGR reset, восстанавливает automatic line wrapping, показывает cursor и покидает alternate screen. При redirected stdout session ничего не пишет.
 
 ### 13.2 Cell model
 
@@ -347,7 +348,7 @@ Dispose отправляет SGR reset, show cursor и leave alternate screen. �
 
 `ScreenBuffer.Write` clip-ит координаты по границам и заменяет ESC/control characters пробелом. Это не позволяет metadata/path text внедрять raw ANSI sequences через текущий char writer.
 
-Ограничение: layout считает один `char` одной terminal column. Grapheme clusters, surrogate pairs и East Asian wide characters отдельно не измеряются.
+Ограничение: layout по-прежнему считает один `char` одной terminal column. Grapheme clusters, surrogate pairs и East Asian wide characters отдельно не измеряются; строки с вероятными wide/zero-width Unicode символами помечаются для консервативной перерисовки.
 
 ### 13.3 Diff algorithm
 
@@ -359,6 +360,8 @@ Dispose отправляет SGR reset, show cursor и leave alternate screen. �
 4. В конце цветового frame при необходимости отправляется SGR reset.
 
 При resize размеры buffers отличаются, поэтому следующий кадр полностью перерисовывается.
+
+Если текущая или предыдущая версия строки содержит Unicode потенциально переменной ширины, diff сначала очищает эту terminal row и затем полностью её перерисовывает. Остальные строки сохраняют обычный точечный diff.
 
 ### 13.4 Responsive layout
 

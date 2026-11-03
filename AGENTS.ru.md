@@ -30,7 +30,7 @@
 - ATL 7.19.0 лениво загружает метаданные только текущего трека.
 - Настройки: `%LOCALAPPDATA%\Yacplayer\settings.json`.
 - Есть framework-dependent win-x64 publish, win-x64 Native AOT, Inno Setup 6 и self-contained x64 MSIX для Microsoft Store.
-- 14 xUnit-тестов без реального аудиоустройства.
+- 16 xUnit-тестов без реального аудиоустройства.
 - MIT; в документации есть уведомление об AI-assisted/generated code.
 - Публичные документы ведутся сначала на английском и имеют русские версии.
 
@@ -65,12 +65,12 @@
 ### Терминальный UI
 
 - `TerminalSession` управляет alternate screen, курсором и восстановлением терминала.
-- Кадр строится в `ScreenBuffer`, затем `Diff` выводит только изменённые ANSI-run.
+- Кадр строится в `ScreenBuffer`, затем `Diff` выводит только изменённые ANSI-run; строки с вероятным Unicode переменной ширины очищаются и полностью перерисовываются.
 - Широкая компоновка содержит header, Now Playing, Queue, visualizer, Playback и Audio Info; есть компактный режим.
 - На зелёном фоне заголовков панелей используется белый полужирный текст, а рамки остаются ярко-зелёными.
 - Справа в верхней рамке показывается версия запущенной сборки в формате `vA.B.C.D`; она скрывается только при недостаточной ширине терминала.
 - Progress bar рисуется зелёными `█`, остаток — `·`.
-- Спектр использует `█`, зелёные/жёлтые/красные уровни по высоте и жёлтый верхний маркер.
+- Спектр использует `█`, плавный ANSI true-color градиент зелёный/жёлтый/красный по высоте и жёлтый верхний маркер.
 - `V`: Spectrum → Waveform → Off. При смене режима backlog очищается; FFT не считается в Waveform/Off.
 - Waveform рисуется зелёными `.` по min/max envelope. Точка — актуальное намеренное решение дизайна.
 
@@ -262,7 +262,9 @@ Installer собирается после обновления `artifacts/publis
 - Обновление цвета заголовков панелей 2026-11-03: текст на ярко-зелёном фоне изменён с чёрного на белый. `dotnet build Yacplayer.sln -c Release --no-restore` завершился с 0 warnings/0 errors, `dotnet test Yacplayer.sln -c Release --no-build` прошёл 14/14 тестов, а Store-identity пакет `Yacplayer-1.26.3.11-Store-win-x64.msix` успешно пересобран. Ручная проверка TUI остаётся невыполненной.
 - Обновление версии в заголовке 2026-11-03: справа в верхней рамке теперь выводится `vA.B.C.D`, полученная из запущенной assembly. Release build завершился с 0 warnings/0 errors, прошли 14/14 тестов, а Store-identity пакет `Yacplayer-1.26.3.11-Store-win-x64.msix` успешно пересобран. Ручная проверка TUI остаётся невыполненной.
 - Обновление изображения README 2026-11-03: верхняя иконка в обеих языковых версиях заменена предоставленным пользователем PNG-скриншотом; целостность изображения и ссылки проверены без пересборки кода.
-- Обновление installer-релиза 2026-11-03: framework-dependent win-x64 приложение заново опубликовано в `artifacts/publish/`, `Yacplayer.exe --version` подтвердил `1.26.3.11`, а `artifacts/installer/Yacplayer-1.26.3.11-win-x64-setup.exe` успешно собран Inno Setup 6.7.1. SHA-256 установщика: `20519588285C691EC00E7B9CE98FD74B6435F3CFAE8B3A5598A187F5A25B9B96`; после сборки прошли 14/14 тестов. Smoke-проверка установки/удаления остаётся невыполненной.
+- Обновление installer-релиза 2026-11-03: framework-dependent win-x64 приложение заново опубликовано в `artifacts/publish/`, `Yacplayer.exe --version` подтвердил `1.26.3.11`, а `artifacts/installer/Yacplayer-1.26.3.11-win-x64-setup.exe` успешно собран Inno Setup 6.7.1. Текущий SHA-256 установщика: `C0BBCC261111B1E6BFDCDA8C8DB897A6CCC730B518F159D3B5A241C9BD5130FD`. Smoke-проверка установки/удаления остаётся невыполненной.
+- Защита Unicode diff 2026-11-03: строки с вероятными wide/zero-width Unicode символами в текущем или предыдущем кадре очищаются и полностью перерисовываются, остальные строки сохраняют run-level diff; на время alternate-screen session отключён autowrap. Добавлен целевой regression-тест; `dotnet build Yacplayer.sln -c Release --no-restore` завершился с 0 warnings/0 errors, `dotnet test Yacplayer.sln -c Release --no-build` прошёл 15/15 тестов. Ручной TUI smoke с mixed-width Unicode остаётся невыполненным.
+- Обновление градиента спектра 2026-11-03: три резких цветовых порога заменены интерполированным ANSI true-color градиентом зелёный/жёлтый/красный, жёлтый верхний маркер сохранён; добавлена проверка true-color escape. Итоговая Release-сборка завершилась с 0 warnings/0 errors, прошли 16/16 тестов, installer и Store-identity MSIX успешно пересобраны; SHA-256 MSIX: `80D6E3C05051CA3DA96D92E318074F2A48D31F011AAE46F27F42CDE3BE64D16C`. Ручная визуальная проверка градиента и mixed-width TUI остаётся невыполненной.
 - Ручной WASAPI/TUI/installer smoke для документальной правки не выполнялся.
 
 - Подготовка Microsoft Store 2026-11-03: self-contained x64 MSIX успешно собран через Windows SDK `MakeAppx` 10.0.26100.8249; в layout проверены manifest, сгенерированные assets, execution alias, MIT license, third-party notices и privacy policy.
