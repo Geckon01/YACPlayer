@@ -139,6 +139,7 @@ Ownership and safety invariants:
 | `src/Yacplayer/Dsp/` | Hann-windowed FFT and logarithmic spectrum bands |
 | `src/Yacplayer/Terminal/` | Alternate-screen lifetime and styled differential rendering |
 | `tests/Yacplayer.Tests/` | Device-independent xUnit tests |
+| `.github/workflows/tests.yml` | Windows Release build and test workflow for pushes and pull requests |
 | `assets/` | PNG source and multi-resolution Windows ICO |
 | `installer/` | Inno Setup source |
 | `packaging/msix/` | Microsoft Store MSIX manifest, build script, and non-secret identity example |
@@ -157,6 +158,8 @@ dotnet test Yacplayer.sln -c Release
 dotnet run --project src/Yacplayer --
 dotnet run --project src/Yacplayer -- "C:\Music\track.mp3"
 ```
+
+GitHub Actions mirrors the restore, Release build, and test gate on `windows-latest` for pushes, pull requests, and manual dispatches. The workflow uses read-only repository permissions and does not require secrets.
 
 Framework-dependent publish:
 
@@ -285,6 +288,7 @@ Local-only caution at the time of this update: `yacplayer-history-backup-2026110
 
 Update this section after every material change.
 
+- GitHub Actions test CI added on 2026-11-04: `.github/workflows/tests.yml` runs restore, Release build, and all tests on `windows-latest` for pushes, pull requests, and manual dispatches, with read-only repository permissions and no secrets. Local verification succeeded with `dotnet build Yacplayer.sln -c Release` at 0 warnings/0 errors and `dotnet test Yacplayer.sln -c Release --no-build` at 18/18 passing tests; the first hosted Actions run remains pending until the commit is pushed to GitHub.
 - Last repository/code review: 2026-11-03.
 - Reviewed sanitized `main`: `5b27795` before adding this guide.
 - Confirmed project target/dependencies, source flow, 12 test definitions, publish profile, installer, English/Russian docs, and tracked artifact layout by inspection.

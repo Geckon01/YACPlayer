@@ -137,6 +137,7 @@ Program / CLI
 | `src/Yacplayer/Dsp/` | Hann FFT и logarithmic bands |
 | `src/Yacplayer/Terminal/` | Alternate screen и differential renderer |
 | `tests/Yacplayer.Tests/` | Device-independent xUnit tests |
+| `.github/workflows/tests.yml` | Windows Release build и тесты для push и pull request |
 | `assets/` | PNG и Windows ICO |
 | `installer/` | Inno Setup source |
 | `packaging/msix/` | Manifest, сценарий MSIX-сборки и пример несекретной identity для Microsoft Store |
@@ -152,6 +153,8 @@ dotnet build Yacplayer.sln -c Release
 dotnet test Yacplayer.sln -c Release
 dotnet run --project src/Yacplayer --
 ```
+
+GitHub Actions повторяет restore, Release build и test gate на `windows-latest` для push, pull request и ручного запуска. Workflow имеет только read-only доступ к репозиторию и не требует секретов.
 
 Framework-dependent publish:
 
@@ -251,6 +254,7 @@ Installer собирается после обновления `artifacts/publis
 
 ## Текущая проверка
 
+- CI для тестов в GitHub Actions добавлен 2026-11-04: `.github/workflows/tests.yml` выполняет restore, Release build и все тесты на `windows-latest` для push, pull request и ручного запуска с read-only правами на репозиторий и без секретов. Локально `dotnet build Yacplayer.sln -c Release` завершился с 0 warnings/0 errors, а `dotnet test Yacplayer.sln -c Release --no-build` прошёл 18/18 тестов; первый hosted-запуск Actions остаётся непроверенным до отправки коммита на GitHub.
 - Последнее ревью репозитория/кода: 2026-11-03.
 - Просмотрен очищенный `main` `5b27795` до добавления руководства.
 - По коду проверены target/dependencies, data flow, 12 tests, publish profile, installer, двуязычные docs и tracked artifacts.

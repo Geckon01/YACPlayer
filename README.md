@@ -171,6 +171,8 @@ dotnet build Yacplayer.sln -c Release
 dotnet test Yacplayer.sln -c Release
 ```
 
+GitHub Actions runs the same restore, Release build, and test sequence on Windows for every push and pull request.
+
 The current suite contains 18 device-independent unit tests covering CLI parsing, four-part assembly versioning, playlist behavior, shuffle, list viewport scrolling/clamping, ring-buffer wrapping/latest reads, pre-volume PCM tapping, ANSI/true-color diff styles, batching and Unicode-row refresh, settings, FFT, metadata fallback, and browser filtering/sorting.
 
 Framework-dependent win-x64 publish:

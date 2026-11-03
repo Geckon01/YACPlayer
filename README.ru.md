@@ -171,6 +171,8 @@ dotnet build Yacplayer.sln -c Release
 dotnet test Yacplayer.sln -c Release
 ```
 
+GitHub Actions выполняет ту же последовательность restore, Release-сборки и тестов на Windows для каждого push и pull request.
+
 Текущий набор содержит 18 unit-тестов без требования аудиоустройства: CLI, четырёхкомпонентная assembly version, playlist, shuffle, прокрутка/clamp list viewport, ring buffer wrapping/latest reads, pre-volume PCM tap, ANSI/true-color diff styles, batching и обновление Unicode-строк, settings, FFT, metadata fallback и browser filtering/sorting.
 
 Публикация framework-dependent win-x64:
