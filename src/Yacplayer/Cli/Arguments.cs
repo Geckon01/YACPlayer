@@ -1,31 +1,83 @@
 namespace Yacplayer.Cli;
 
-public sealed record Arguments(string? Path, bool Recursive, int? Fps, bool NoVisualizer, bool Help, bool Version, bool IsValid, string? Error)
+public sealed record Arguments(
+    string? Path,
+    bool Recursive,
+    int? Fps,
+    bool NoVisualizer,
+    bool Help,
+    bool Version,
+    bool IsValid,
+    string? Error)
 {
     public static Arguments Parse(string[] args)
     {
-        string? path = null, error = null; bool recursive = false, noVisual = false, help = false, version = false; int? fps = null;
+        string? path = null;
+        string? error = null;
+        bool recursive = false;
+        bool noVisual = false;
+        bool help = false;
+        bool version = false;
+        int? fps = null;
+
         for (int i = 0; i < args.Length; i++)
         {
             var arg = args[i];
             switch (arg)
             {
-                case "--help" or "-h": help = true; break;
-                case "--version": version = true; break;
-                case "--recursive" or "-r": recursive = true; break;
-                case "--no-visualizer": noVisual = true; break;
-                case "--fps":
-                    if (++i >= args.Length || !int.TryParse(args[i], out var value) || value is not (30 or 60)) error = "--fps must be 30 or 60.";
-                    else fps = value;
+                case "--help" or "-h":
+                    help = true;
                     break;
+
+                case "--version":
+                    version = true;
+                    break;
+
+                case "--recursive" or "-r":
+                    recursive = true;
+                    break;
+
+                case "--no-visualizer":
+                    noVisual = true;
+                    break;
+
+                case "--fps":
+                    if (++i >= args.Length ||
+                        !int.TryParse(args[i], out var value) ||
+                        value is not (30 or 60))
+                    {
+                        error = "--fps must be 30 or 60.";
+                    }
+                    else
+                    {
+                        fps = value;
+                    }
+
+                    break;
+
                 default:
-                    if (arg.StartsWith('-')) error = $"Unknown option: {arg}";
-                    else if (path is not null) error = "Only one file or directory path may be supplied.";
-                    else path = System.IO.Path.GetFullPath(arg);
+                    if (arg.StartsWith('-'))
+                    {
+                        error = $"Unknown option: {arg}";
+                    }
+                    else if (path is not null)
+                    {
+                        error = "Only one file or directory path may be supplied.";
+                    }
+                    else
+                    {
+                        path = System.IO.Path.GetFullPath(arg);
+                    }
+
                     break;
             }
-            if (error is not null) break;
+
+            if (error is not null)
+            {
+                break;
+            }
         }
+
         return new(path, recursive, fps, noVisual, help, version, error is null, error);
     }
 

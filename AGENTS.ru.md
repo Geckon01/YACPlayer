@@ -218,7 +218,7 @@ Installer собирается после обновления `artifacts/publis
 - Перейти к monotonic frame deadline и снижать idle rate.
 - Добавить input/layout snapshots, ring stress, generated-WAV integration, optional WASAPI, installer и soak tests.
 - Добавить bitrate только при явной поддержке, сохранив lazy current-track policy.
-- Отдельными style-only правками отформатировать плотный однострочный код в `Arguments.cs`, моделях и тестах.
+- Отдельными style-only правками отформатировать плотный однострочный код в оставшихся domain-классах и тестах.
 
 ## Платформы
 
@@ -254,6 +254,10 @@ Installer собирается после обновления `artifacts/publis
 
 ## Текущая проверка
 
+- Style cleanup `Playlist.cs` 2026-11-04: repeat enum, поля/свойства, навигация воспроизведения, удаление, shuffle history/bag и helper loops развёрнуты в обычные блоки с сохранением порядка мутаций и алгоритмов. `dotnet format Yacplayer.sln whitespace --include src/Yacplayer/Library/Playlist.cs --no-restore` завершился успешно, `dotnet build Yacplayer.sln -c Release` прошёл с 0 warnings/0 errors, `dotnet test Yacplayer.sln -c Release --no-build` прошёл 18/18 тестов, включая playlist coverage.
+- Style cleanup `PlayerSettings.cs` 2026-11-04: visualizer enum и каждое validation rule развёрнуты в обычные блоки без изменения defaults, порядка валидации и допустимых значений. `dotnet format Yacplayer.sln whitespace --include src/Yacplayer/Configuration/PlayerSettings.cs --no-restore` завершился успешно, `dotnet build Yacplayer.sln -c Release` прошёл с 0 warnings/0 errors, `dotnet test Yacplayer.sln -c Release --no-build` прошёл 18/18 тестов.
+- Style cleanup `SettingsStore.cs` 2026-11-04: загрузка, восстановление после malformed JSON, игнорируемые I/O branches и сохранение через temporary file развёрнуты в читаемые блоки с сохранением порядка операций и exception behavior. `dotnet format Yacplayer.sln whitespace --include src/Yacplayer/Configuration/SettingsStore.cs --no-restore` завершился успешно, `dotnet build Yacplayer.sln -c Release` прошёл с 0 warnings/0 errors, `dotnet test Yacplayer.sln -c Release --no-build` прошёл 18/18 тестов.
+- Style cleanup `Arguments.cs` 2026-11-04: объявление record, состояние parser, ветви switch, validation branches и early exit развёрнуты в обычные блоки без изменения поведения CLI. `dotnet format Yacplayer.sln whitespace --include src/Yacplayer/Cli/Arguments.cs --no-restore` завершился успешно, `dotnet build Yacplayer.sln -c Release` прошёл с 0 warnings/0 errors, `dotnet test Yacplayer.sln -c Release --no-build` прошёл 18/18 тестов.
 - Style cleanup `Program.cs` 2026-11-04: плотные однострочные проверки аргументов, обработчик Ctrl+C и top-level exception handling развёрнуты в обычные блоки без изменения control flow и exit codes. `dotnet build Yacplayer.sln -c Release` завершился с 0 warnings/0 errors, `dotnet test Yacplayer.sln -c Release --no-build` прошёл 18/18 тестов.
 - CI для тестов в GitHub Actions добавлен 2026-11-04: `.github/workflows/tests.yml` выполняет restore, Release build и все тесты на `windows-latest` для push, pull request и ручного запуска с read-only правами на репозиторий и без секретов. Локально `dotnet build Yacplayer.sln -c Release` завершился с 0 warnings/0 errors, а `dotnet test Yacplayer.sln -c Release --no-build` прошёл 18/18 тестов; первый hosted-запуск Actions остаётся непроверенным до отправки коммита на GitHub.
 - Последнее ревью репозитория/кода: 2026-11-03.
