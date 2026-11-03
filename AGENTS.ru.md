@@ -218,7 +218,7 @@ Installer собирается после обновления `artifacts/publis
 - Перейти к monotonic frame deadline и снижать idle rate.
 - Добавить input/layout snapshots, ring stress, generated-WAV integration, optional WASAPI, installer и soak tests.
 - Добавить bitrate только при явной поддержке, сохранив lazy current-track policy.
-- Отдельной style-only правкой отформатировать плотный однострочный код в `Program.cs`, `Arguments.cs`, моделях и тестах.
+- Отдельными style-only правками отформатировать плотный однострочный код в `Arguments.cs`, моделях и тестах.
 
 ## Платформы
 
@@ -254,6 +254,7 @@ Installer собирается после обновления `artifacts/publis
 
 ## Текущая проверка
 
+- Style cleanup `Program.cs` 2026-11-04: плотные однострочные проверки аргументов, обработчик Ctrl+C и top-level exception handling развёрнуты в обычные блоки без изменения control flow и exit codes. `dotnet build Yacplayer.sln -c Release` завершился с 0 warnings/0 errors, `dotnet test Yacplayer.sln -c Release --no-build` прошёл 18/18 тестов.
 - CI для тестов в GitHub Actions добавлен 2026-11-04: `.github/workflows/tests.yml` выполняет restore, Release build и все тесты на `windows-latest` для push, pull request и ручного запуска с read-only правами на репозиторий и без секретов. Локально `dotnet build Yacplayer.sln -c Release` завершился с 0 warnings/0 errors, а `dotnet test Yacplayer.sln -c Release --no-build` прошёл 18/18 тестов; первый hosted-запуск Actions остаётся непроверенным до отправки коммита на GitHub.
 - Последнее ревью репозитория/кода: 2026-11-03.
 - Просмотрен очищенный `main` `5b27795` до добавления руководства.

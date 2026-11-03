@@ -243,7 +243,7 @@ The detailed backlog is [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md). Keep this 
 - Replace delay-after-work scheduling with monotonic frame deadlines and a lower idle rate.
 - Add input/layout snapshots, concurrent ring stress tests, generated-WAV integration tests, optional WASAPI smoke tests, installer tests, and long-running soak coverage.
 - Calculate/display bitrate if it becomes a supported metadata field; preserve the current lazy-current-track policy unless requirements change.
-- Reformat dense one-line code in `Program.cs`, `Arguments.cs`, settings/domain classes, and tests when doing so can remain a reviewable style-only change.
+- Reformat dense one-line code in `Arguments.cs`, settings/domain classes, and tests when doing so can remain a reviewable style-only change.
 
 ## Platform status and portability
 
@@ -288,6 +288,7 @@ Local-only caution at the time of this update: `yacplayer-history-backup-2026110
 
 Update this section after every material change.
 
+- `Program.cs` style cleanup on 2026-11-04: expanded dense one-line argument checks, Ctrl+C handler, and top-level exception handling into conventional blocks without changing control flow or exit codes. `dotnet build Yacplayer.sln -c Release` succeeded with 0 warnings/0 errors and `dotnet test Yacplayer.sln -c Release --no-build` passed 18/18 tests.
 - GitHub Actions test CI added on 2026-11-04: `.github/workflows/tests.yml` runs restore, Release build, and all tests on `windows-latest` for pushes, pull requests, and manual dispatches, with read-only repository permissions and no secrets. Local verification succeeded with `dotnet build Yacplayer.sln -c Release` at 0 warnings/0 errors and `dotnet test Yacplayer.sln -c Release --no-build` at 18/18 passing tests; the first hosted Actions run remains pending until the commit is pushed to GitHub.
 - Last repository/code review: 2026-11-03.
 - Reviewed sanitized `main`: `5b27795` before adding this guide.
