@@ -19,10 +19,11 @@ Implemented:
 - queue removal without deleting files, repeat Off/All/One, and shuffle bag navigation;
 - startup with either a file or a directory;
 - built-in Midnight Commander-style browser with directories, `[..]`, a `This PC` drive list, and file/folder queue insertion;
-- adaptive ANSI/VT interface with colored panels and differential rendering;
-- switchable Hann-windowed FFT spectrum, `+` waveform, and disabled visualizer modes;
+- adaptive ANSI/VT interface with colored panels, white captions on green title backgrounds, the current version in the top-right header, and differential rendering;
+- switchable Hann-windowed FFT spectrum, `.` waveform, and disabled visualizer modes; spectrum and waveform amplitude are independent of output volume and mute;
 - per-user JSON settings;
 - CLI, Release publishing, and an Inno Setup installer;
+- reproducible self-contained MSIX packaging for Microsoft Store submission;
 - embedded multi-resolution Windows application icon.
 
 Known limitations:
@@ -170,7 +171,7 @@ dotnet build Yacplayer.sln -c Release
 dotnet test Yacplayer.sln -c Release
 ```
 
-The current suite contains 12 device-independent unit tests covering CLI parsing, playlist behavior, shuffle, ring-buffer wrapping/latest reads, ANSI diff/styles/batching, settings, FFT, metadata fallback, and browser filtering/sorting.
+The current suite contains 14 device-independent unit tests covering CLI parsing, four-part assembly versioning, playlist behavior, shuffle, ring-buffer wrapping/latest reads, pre-volume PCM tapping, ANSI diff/styles/batching, settings, FFT, metadata fallback, and browser filtering/sorting.
 
 Framework-dependent win-x64 publish:
 
@@ -189,13 +190,23 @@ dotnet publish src/Yacplayer/Yacplayer.csproj `
 
 Output: `artifacts/publish-aot/Yacplayer.exe`. Native AOT requires the .NET native toolchain for Windows (Visual Studio Build Tools with the Desktop development with C++ workload). The AOT profile is Windows-only because audio output still uses WASAPI.
 
+Microsoft Store MSIX packaging:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File packaging\msix\Build-Msix.ps1
+```
+
+See [Microsoft Store release](docs/MICROSOFT_STORE.md) for Partner Center identity setup, certification, and secret handling.
+
+Privacy: [Yacplayer Privacy Policy](PRIVACY.md). The application is local-only and does not collect or transmit personal data.
+
 Build the Inno Setup 6 installer:
 
 ```powershell
 & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\Yacplayer.iss
 ```
 
-Output: `artifacts\installer\Yacplayer-1.0.0-win-x64-setup.exe`.
+Output: `artifacts\installer\Yacplayer-1.26.3.11-win-x64-setup.exe`.
 
 ## Repository layout
 

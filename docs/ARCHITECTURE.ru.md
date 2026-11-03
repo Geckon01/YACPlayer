@@ -4,7 +4,7 @@
 
 ## 1. Назначение документа
 
-Документ описывает фактически реализованную архитектуру Yacplayer 1.0 на уровне компонентов, данных, потоков исполнения, состояний, resource ownership и build/release pipeline. Он не является списком желаемых функций: отличия текущей реализации от целевой модели перечислены в разделе «Ограничения и технический долг».
+Документ описывает фактически реализованную архитектуру Yacplayer 1.26.3.11 на уровне компонентов, данных, потоков исполнения, состояний, resource ownership и build/release pipeline. Он не является списком желаемых функций: отличия текущей реализации от целевой модели перечислены в разделе «Ограничения и технический долг».
 
 Целевая платформа приложения — Windows x64, `.NET 10`, `net10.0-windows`. Shipping unit — один managed executable с framework-dependent DLL-зависимостями и опциональным Inno Setup installer.
 
@@ -28,8 +28,9 @@ flowchart LR
     App --> Playlist["Playlist"]
     App --> Audio["AudioEngine"]
     Audio --> NAudio["NAudio AudioFileReader"]
-    NAudio --> WASAPI["Windows WASAPI shared"]
     NAudio --> Tap["PcmTapSampleProvider"]
+    Tap --> Volume["VolumeSampleProvider"]
+    Volume --> WASAPI["Windows WASAPI shared"]
     Tap --> Ring["SampleRingBuffer"]
     Ring --> FFT["SpectrumAnalyzer / FftFlat"]
     Ring --> Wave["Latest PCM waveform"]
@@ -245,6 +246,7 @@ Source chain:
 ```text
 AudioFileReader (ISampleProvider)
   → PcmTapSampleProvider
+  → VolumeSampleProvider
   → ToWaveProvider()
   → WasapiPlayer.Init
   → default Windows render endpoint
@@ -256,7 +258,7 @@ AudioFileReader (ISampleProvider)
 - `TogglePause()` — `Pause`/`Play` по состоянию output;
 - `Stop()` — intentional stop, position `0`, ring reset;
 - `Seek(seconds)` — clamp в `[0, TotalTime]`, затем ring reset;
-- `SetVolume(0..100)` — изменяет `AudioFileReader.Volume`;
+- `SetVolume(0..100)` — изменяет расположенный после tap `VolumeSampleProvider`;
 - `ToggleMute()` — сохраняет logical volume, устанавливает effective volume `0`;
 - `Dispose()` — отписка event, stop/dispose output, dispose reader.
 
@@ -276,7 +278,7 @@ UI не получает decoder/output напрямую. `PlaybackSnapshot` с�
 
 ## 11. PCM tap и ring buffer
 
-`PcmTapSampleProvider` реализует `ISampleProvider` и прозрачно возвращает decoder output вызывающей стороне.
+`PcmTapSampleProvider` реализует `ISampleProvider` и прозрачно возвращает decoder output вызывающей стороне. `VolumeSampleProvider` расположен после tap, поэтому выходная громкость и mute влияют на WASAPI playback, но не меняют амплитуду spectrum или waveform.
 
 - mono input копируется в ring блоком;
 - multi-channel input downmix-ится средним арифметическим каналов на frame;
@@ -305,7 +307,7 @@ flowchart LR
     Clamp --> Smooth["attack/release smoothing"]
     Smooth --> Bars["ANSI colored bars"]
     Ring -->|"только Waveform"| Latest["до 4096 последних samples"]
-    Latest --> Plus["интерполированные символы +"]
+    Latest --> Dots["интерполированные символы ."]
 ```
 
 `SpectrumAnalyzer` выделяет buffers и `FastFourierTransform` один раз в constructor. Для каждого анализа:
@@ -320,7 +322,7 @@ flowchart LR
 
 UI использует 64 output bands и интерполирует их на фактическую ширину spectrum panel. Цвет зависит от вертикального уровня: зелёный, жёлтый, красный; над bar рисуется жёлтый peak marker. Это визуальный marker текущей высоты, не временной peak-hold buffer.
 
-Режим Waveform читает до 4096 новейших mono PCM samples и применяет визуальное усиление кадра, поэтому форма видна при низкой громкости без изменения звука. Для каждой колонки вычисляется min/max envelope соответствующего диапазона samples, отображается относительно вертикального центра и рисуется зелёными `+`. Почти полная тишина остаётся пустой, чтобы не усиливать шум. В режиме Off не выполняется ни FFT, ни waveform sampling. Заголовок и информационная строка панели соответствуют выбранному режиму.
+Режим Waveform читает до 4096 новейших mono PCM samples и применяет визуальное усиление кадра, поэтому форма видна при низкой громкости без изменения звука. Для каждой колонки вычисляется min/max envelope соответствующего диапазона samples, отображается относительно вертикального центра и рисуется зелёными `.`. Почти полная тишина остаётся пустой, чтобы не усиливать шум. В режиме Off не выполняется ни FFT, ни waveform sampling. Заголовок и информационная строка панели соответствуют выбранному режиму.
 
 ## 13. Terminal subsystem
 
@@ -461,7 +463,7 @@ CLI FPS, recursive и no-visualizer меняют in-memory settings текуще
 
 Покрыто:
 
-- CLI invalid flags/FPS/help;
+- CLI invalid flags/FPS/help и четырёхкомпонентная assembly release version;
 - empty/basic playlist, repeat, remove;
 - shuffle cycle uniqueness;
 - ring wrap/overwrite/count;
@@ -518,7 +520,7 @@ Inno Setup:
 - проверка folder pattern `.NETCore.App\10.*`;
 - bundled README, LICENSE и third-party notices;
 - PDB исключён;
-- output `artifacts/installer/Yacplayer-1.0.0-win-x64-setup.exe`.
+- output `artifacts/installer/Yacplayer-1.26.3.11-win-x64-setup.exe`.
 
 ## 22. Security и privacy
 

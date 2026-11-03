@@ -6,3 +6,12 @@ obj/
 TestResults/
 *.user
 *.suo
+
+# Microsoft Store/MSIX local outputs and signing material. Never commit secrets.
+artifacts/msix/
+packaging/msix/StoreIdentity.local.psd1
+*.pfx
+*.p12
+*.cer
+*.pvk
+*.snk

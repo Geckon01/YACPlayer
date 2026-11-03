@@ -4,7 +4,7 @@
 
 ## 1. Purpose and scope
 
-This document describes the architecture that is actually implemented in Yacplayer 1.0: components, data flow, execution contexts, state, resource ownership, build/release flow, known limitations, and extension points. It is not an aspirational feature list; gaps between the implementation and the intended design are listed explicitly under “Limitations and technical debt.”
+This document describes the architecture that is actually implemented in Yacplayer 1.26.3.11: components, data flow, execution contexts, state, resource ownership, build/release flow, known limitations, and extension points. It is not an aspirational feature list; gaps between the implementation and the intended design are listed explicitly under “Limitations and technical debt.”
 
 The target is Windows x64, `.NET 10`, and `net10.0-windows`. The application ships as one managed executable with framework-dependent DLLs and an optional Inno Setup installer.
 
@@ -28,8 +28,9 @@ flowchart LR
     App --> Playlist["Playlist"]
     App --> Audio["AudioEngine"]
     Audio --> Reader["NAudio AudioFileReader"]
-    Reader --> WASAPI["Windows WASAPI shared"]
     Reader --> Tap["PcmTapSampleProvider"]
+    Tap --> Volume["VolumeSampleProvider"]
+    Volume --> WASAPI["Windows WASAPI shared"]
     Tap --> Ring["SampleRingBuffer"]
     Ring --> FFT["SpectrumAnalyzer / FftFlat"]
     Ring --> Wave["Latest PCM waveform"]
@@ -208,6 +209,7 @@ Allowlist: `.wav`, `.mp3`, `.m4a`, `.aac`, `.wma`, `.flac`.
 ```text
 AudioFileReader (ISampleProvider)
   → PcmTapSampleProvider
+  → VolumeSampleProvider
   → ToWaveProvider()
   → WasapiPlayer.Init
   → default Windows render endpoint
@@ -221,7 +223,7 @@ The player is built in shared mode with a requested latency of 100 ms.
 - `TogglePause()` maps playing/paused to pause/play;
 - `Stop()` marks an intentional stop, stops output, resets position and the ring;
 - `Seek(seconds)` clamps to the track duration and resets the ring;
-- `SetVolume` clamps to 0–100 and updates `AudioFileReader.Volume`;
+- `SetVolume` clamps to 0–100 and updates the post-tap `VolumeSampleProvider`;
 - `ToggleMute` preserves logical volume while applying effective volume zero;
 - `Dispose` unsubscribes, stops/disposes output, and disposes the reader.
 
@@ -235,7 +237,7 @@ The UI does not receive decoder/output objects. `PlaybackSnapshot` exposes state
 
 ## 11. PCM tap and ring buffer
 
-`PcmTapSampleProvider` forwards source samples unchanged to WASAPI while also copying mono data to the ring. Mono input is written in one block; multichannel frames are averaged across channels.
+`PcmTapSampleProvider` forwards decoded samples while also copying mono data to the ring. `VolumeSampleProvider` follows the tap, so output volume and mute affect WASAPI playback but do not alter spectrum or waveform amplitude. Mono input is written in one block; multichannel frames are averaged across channels.
 
 The tap does not perform FFT, logging, JSON, metadata, or terminal I/O.
 
@@ -258,14 +260,14 @@ flowchart LR
     Clamp --> Smooth["attack/release smoothing"]
     Smooth --> Bars["ANSI colored bars"]
     Ring -->|"Waveform only"| Latest["up to 4096 latest samples"]
-    Latest --> Plus["interpolated + characters"]
+    Latest --> Dots["interpolated . characters"]
 ```
 
 `SpectrumAnalyzer` allocates FFT buffers, the transform, and the Hann window once. Each analysis reads an FFT-sized sample block, applies the window, performs complex forward FFT, maps each output band to logarithmic frequency limits, finds peak magnitude within matching bins, and normalizes to 0–1.
 
 The UI uses 64 bands and interpolates them to the spectrum-panel width. Vertical levels are green, yellow, and red; a yellow marker is drawn at the current bar height. The marker is not a time-based peak-hold buffer.
 
-Waveform mode reads up to 4096 newest mono PCM samples and applies per-frame visual gain so the shape remains visible at low playback volume without changing audio. Each terminal column receives the minimum/maximum envelope of its sample range, mapped around the vertical center and drawn with green `+` characters. Near-silence is left blank instead of amplifying noise. Off mode performs neither FFT nor waveform sampling. The panel title and detail label follow the selected mode.
+Waveform mode reads up to 4096 newest mono PCM samples and applies per-frame visual gain so the shape remains visible at low playback volume without changing audio. Each terminal column receives the minimum/maximum envelope of its sample range, mapped around the vertical center and drawn with green `.` characters. Near-silence is left blank instead of amplifying noise. Off mode performs neither FFT nor waveform sampling. The panel title and detail label follow the selected mode.
 
 Current caveat: a short ring read is consumed and then causes cleared bands. An exact/non-consuming read is needed to avoid dropping partial FFT windows.
 
@@ -375,7 +377,7 @@ The automated suite does not create a real WASAPI device.
 
 Covered:
 
-- invalid CLI flags/FPS and help parsing;
+- invalid CLI flags/FPS, help parsing, and the four-part assembly release version;
 - empty/basic playlist, repeat, removal, and shuffle-cycle uniqueness;
 - ring wrap/overwrite/count;
 - identical terminal frames, one-cell/color changes, and ANSI batching;

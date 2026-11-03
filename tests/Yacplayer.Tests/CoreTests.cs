@@ -3,6 +3,7 @@ namespace Yacplayer.Tests;
 public class CoreTests
 {
     [Fact] public void CliRejectsUnknownAndBadFps() { Assert.False(Arguments.Parse(["--wat"]).IsValid); Assert.False(Arguments.Parse(["--fps", "42"]).IsValid); Assert.True(Arguments.Parse(["--help"]).Help); }
+    [Fact] public void AssemblyUsesFourPartReleaseVersion() { Assert.Equal(new Version(1,26,3,11), typeof(Yacplayer.App).Assembly.GetName().Version); Assert.Contains("1.26.3.11", Arguments.HelpText); }
     [Fact] public void PlaylistRepeatAndRemovalAreSafe() { var p = new Playlist(1); Assert.Null(p.Next()); p.Add(new("a")); p.Add(new("b")); Assert.Equal("a", p.Next()!.Path); Assert.Equal("b", p.Next()!.Path); Assert.Null(p.Next(true)); p.SetRepeat(RepeatMode.All); Assert.Equal("a", p.Next(true)!.Path); p.Remove(0); Assert.Single(p.Items); }
     [Fact] public void ShuffleDoesNotRepeatWithinCycle() { var p = new Playlist(2); p.AddRange(Enumerable.Range(0, 5).Select(i => new TrackEntry(i.ToString()))); p.ToggleShuffle(); var paths = Enumerable.Range(0, 5).Select(_ => p.Next()!.Path).ToArray(); Assert.Equal(5, paths.Distinct().Count()); }
     [Fact] public void RingWrapsAndDropsOldest() { var r = new SampleRingBuffer(4); r.Write([1,2,3,4,5]); Span<float> output = stackalloc float[4]; Assert.Equal(4, r.Read(output)); Assert.Equal(new float[]{2,3,4,5}, output.ToArray()); Assert.Equal(0, r.Count); }

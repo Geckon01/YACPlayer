@@ -30,7 +30,7 @@ public sealed record Arguments(string? Path, bool Recursive, int? Fps, bool NoVi
     }
 
     public const string HelpText = """
-Yacplayer 1.0 - local terminal music player for Windows
+Yacplayer 1.26.3.11 - local terminal music player for Windows
 Usage: yacplayer [path] [--recursive] [--fps 30|60] [--no-visualizer]
 
 Options:
@@ -46,6 +46,6 @@ Keys: Space pause/resume; X stop; N/P next/previous; arrows seek/select;
       V visual mode; H fullscreen visualization; ? help; Q quit.
 
 Playback: WAV PCM and MP3. M4A/AAC/WMA/FLAC depend on Windows Media Foundation codecs.
-OGG/Opus playback is outside the v1.0 guarantee.
+OGG/Opus playback is not supported by the current release.
 """;
 }

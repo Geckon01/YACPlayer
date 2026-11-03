@@ -10,6 +10,7 @@ namespace Yacplayer;
 
 public sealed class App(Arguments arguments)
 {
+    private static readonly string VersionLabel = $" v{typeof(App).Assembly.GetName().Version?.ToString(4) ?? "0.0.0.0"} ";
     private readonly Playlist _playlist = new();
     private readonly SampleRingBuffer _ring = new(32768);
     private readonly SettingsStore _store = new();
@@ -255,6 +256,8 @@ public sealed class App(Arguments arguments)
     {
         var screen = new ScreenBuffer(width, height);
         DrawBox(screen, 0, 0, width - 1, 2, " Yacplayer ", CellColor.Green);
+        if (width >= VersionLabel.Length + 16)
+            screen.Write(width - VersionLabel.Length - 2, 0, VersionLabel, CellColor.White, CellBackground.BrightGreen, bold: true);
         var state = playback.State == PlaybackState.Playing ? "> PLAYING" : playback.State.ToString().ToUpperInvariant();
         var volumeBlocks = Math.Clamp(playback.Volume / 10, 0, 10);
         var header = $"{state}  |  Vol {playback.Volume,3}% {new string('█', volumeBlocks)}{new string('.', 10 - volumeBlocks)}  |  Repeat: {_playlist.Repeat}  |  Shuffle: {(_playlist.Shuffle ? "On" : "Off")}  |  Output: WASAPI";
@@ -448,7 +451,7 @@ public sealed class App(Arguments arguments)
         if (right - left < 4 || bottom - top < 2) return;
         var borderColor = color == CellColor.Green ? CellColor.BrightGreen : color;
         screen.Write(left, top, "+" + new string('-', right - left - 1) + "+", borderColor);
-        if (color == CellColor.Green) screen.Write(left + 2, top, title, CellColor.Black, CellBackground.BrightGreen, true);
+        if (color == CellColor.Green) screen.Write(left + 2, top, title, CellColor.White, CellBackground.BrightGreen, true);
         else screen.Write(left + 2, top, title, CellColor.Yellow, bold: true);
         for (var y = top + 1; y < bottom; y++) { screen.Write(left, y, "|", borderColor); screen.Write(right, y, "|", borderColor); }
         screen.Write(left, bottom, "+" + new string('-', right - left - 1) + "+", borderColor);
