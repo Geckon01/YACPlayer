@@ -31,7 +31,7 @@
 - ATL 7.19.0 лениво загружает метаданные только текущего трека.
 - Настройки: `%LOCALAPPDATA%\Yacplayer\settings.json`.
 - Есть framework-dependent win-x64 publish, win-x64 Native AOT, Inno Setup 6 и self-contained x64 MSIX для Microsoft Store.
-- 28 xUnit-тестов без реального аудиоустройства.
+- 29 xUnit-тестов без реального аудиоустройства.
 - MIT; в документации есть уведомление об AI-assisted/generated code.
 - Публичные документы ведутся сначала на английском и имеют русские версии.
 
@@ -51,6 +51,7 @@
 - Громкость 0–100%, mute сохраняет логическое значение громкости.
 - Repeat Off/All/One; One повторяет при автоматическом EOF, но ручной Next переходит дальше.
 - Shuffle использует bag без повторов внутри цикла и history для Previous.
+- При одном текущем треке Shuffle + Repeat All начинает новый цикл повторным воспроизведением этого трека и не пытается извлечь элемент из пустого bag.
 - Batch insert добавляет в активный shuffle bag только новые indices, не перестраивая текущий цикл.
 - Сохранённые repeat и shuffle применяются к `Playlist` при запуске.
 - EOF и ошибки передаются из NAudio в UI-loop через bounded queue с generation tag; устаревшие события игнорируются.
@@ -264,6 +265,7 @@ Installer собирается после обновления `artifacts/publis
 
 ## Текущая проверка
 
+- Падение single-track shuffle исправлено 2026-11-05: после заполнения исчерпанного shuffle bag `Playlist.Next` обрабатывает всё ещё пустой цикл из одного трека в Repeat All повторным воспроизведением current item вместо вызова `PopBag` с count zero. Добавлено покрытие ручного Next, automatic EOF и неизменного завершения Repeat Off. Focused whitespace verification и regression прошли успешно; `dotnet build Yacplayer.sln -c Release --no-restore` завершился с 0 warnings/0 errors; `dotnet test Yacplayer.sln -c Release --no-build` прошёл 29/29 тестов. Smoke с реальным воспроизведением остаётся невыполненным.
 - Декомпозиция `App` выполнена 2026-11-04: `App.cs` уменьшен с 727 до 418 строк и оставлен composition root, event loop и command router. Browser loading/navigation/deduplication перенесены в `BrowserController`; cancellation/completions metadata текущего трека — в `CurrentTrackMetadataLoader`; координация visualizer/realtime DSP — в `VisualizationPipeline`; все player/browser layouts и viewports — в `AppRenderer`. Для тестов открыт internal boundary и добавлены regression-тесты renderer layouts и browser deduplication. К изменённым source/test files применён `dotnet format Yacplayer.sln whitespace`, `dotnet build Yacplayer.sln -c Release --no-restore` завершился с 0 warnings/0 errors, `dotnet test Yacplayer.sln -c Release --no-build` прошёл 28/28 тестов. Ручной TUI/WASAPI smoke остаётся невыполненным.
 - Панель realtime-аудиоанализа добавлена 2026-11-04: `B` переключает сохраняемую третью нижнюю панель с RMS/peak/crest, zero-crossing rate, spectral centroid, dominant frequency, beat pulse и эвристическими BPM/confidence. Отдельный bounded pre-volume ring записывается только во включённом состоянии, а UI-thread analyzer не вызывается после отключения. Добавлены regression-тесты gating tap, synthetic tone/tempo analysis и persistence настройки. `dotnet format Yacplayer.sln whitespace --include src/Yacplayer/App.cs src/Yacplayer/Audio/AudioEngine.cs src/Yacplayer/Audio/PcmTapSampleProvider.cs src/Yacplayer/Cli/Arguments.cs src/Yacplayer/Configuration/PlayerSettings.cs src/Yacplayer/Dsp/RealtimeAudioAnalyzer.cs --no-restore --verify-no-changes` завершился успешно; `dotnet build Yacplayer.sln -c Release` завершился с 0 warnings/0 errors; `dotnet test Yacplayer.sln -c Release --no-build` прошёл 26/26 тестов. Точность BPM на реальном аудио, WASAPI behavior и TUI layout вручную не проверены.
 - Обновление отзывчивости больших папок 2026-11-04: перечисление browser-каталога теперь выполняется как отменяемый background request с generation tag, а результат применяется UI-loop, поэтому открытие папки не блокирует input/rendering. Добавление в очередь использует постоянный case-insensitive set путей и один `Playlist.AddRange`; активный shuffle-cycle получает только новые indices без перестройки bag. `FileBrowser` использует attributes, полученные перечислением, вместо отдельного `Directory.Exists` для каждого элемента. Добавлены regression-тесты shuffle-cycle и cancellation; `dotnet build Yacplayer.sln -c Release` завершился с 0 warnings/0 errors, `dotnet test Yacplayer.sln -c Release --no-build` прошёл 23/23 теста. Ручной TUI smoke с большой/медленной папкой остаётся невыполненным.

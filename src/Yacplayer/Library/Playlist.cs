@@ -93,6 +93,12 @@ public sealed class Playlist
                 }
 
                 RefillBag();
+                if (_bag.Count == 0)
+                {
+                    return CurrentIndex is int current
+                        ? Play(current)
+                        : null;
+                }
             }
 
             return Play(PopBag());

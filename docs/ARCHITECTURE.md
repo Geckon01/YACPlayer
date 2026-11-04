@@ -187,7 +187,7 @@ Invariants:
 
 ### Shuffle
 
-`RefillBag` stores every index except the current one. `PopBag` randomly chooses and removes an index, preventing repeats within the current cycle. `Add`/`AddRange` append only newly inserted indices while shuffle is active, preserving already-consumed entries instead of rebuilding the cycle. `All` creates a new cycle after exhaustion; `Off` ends it.
+`RefillBag` stores every index except the current one. `PopBag` randomly chooses and removes an index, preventing repeats within the current cycle. `Add`/`AddRange` append only newly inserted indices while shuffle is active, preserving already-consumed entries instead of rebuilding the cycle. `All` creates a new cycle after exhaustion; when a one-track playlist leaves the refilled bag empty, the current item is replayed directly instead of popping the bag. `Off` ends the cycle.
 
 ### History and removal
 

@@ -174,7 +174,7 @@ dotnet test Yacplayer.sln -c Release
 
 GitHub Actions runs the same restore, Release build, and test sequence on Windows for every push and pull request.
 
-The current suite contains 28 device-independent unit tests covering CLI parsing, four-part assembly versioning, playlist behavior and restored repeat/shuffle state, batch insertion during an active shuffle cycle, bounded audio-event delivery, list viewport scrolling/clamping, ring-buffer wrapping/latest reads, independently gated pre-volume PCM tapping, realtime level/spectrum/tempo analysis, extracted player/browser layout rendering, browser-controller deduplication, ANSI/true-color diff styles, batching and Unicode-row refresh, settings, FFT, metadata fallback, and cancellable browser filtering/sorting.
+The current suite contains 29 device-independent unit tests covering CLI parsing, four-part assembly versioning, playlist behavior and restored repeat/shuffle state including single-track Repeat All, batch insertion during an active shuffle cycle, bounded audio-event delivery, list viewport scrolling/clamping, ring-buffer wrapping/latest reads, independently gated pre-volume PCM tapping, realtime level/spectrum/tempo analysis, extracted player/browser layout rendering, browser-controller deduplication, ANSI/true-color diff styles, batching and Unicode-row refresh, settings, FFT, metadata fallback, and cancellable browser filtering/sorting.
 
 Framework-dependent win-x64 publish:
 

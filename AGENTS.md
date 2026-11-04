@@ -31,7 +31,7 @@ Do not remove or weaken this contract. Its purpose is to let a new agent underst
 - Metadata: ATL 7.19.0, loaded lazily for the current track only.
 - Persistence: per-user JSON at `%LOCALAPPDATA%\Yacplayer\settings.json`.
 - Distribution: framework-dependent win-x64 publish, optional win-x64 Native AOT publish, an Inno Setup 6 installer, and a self-contained x64 MSIX build for Microsoft Store.
-- Automated tests: 28 xUnit tests that avoid real audio hardware.
+- Automated tests: 29 xUnit tests that avoid real audio hardware.
 - License: MIT. The repository and user-facing documentation carry an AI-assisted/generated-code notice.
 - Public documentation is English-first with Russian counterparts.
 
@@ -51,6 +51,7 @@ Do not remove or weaken this contract. Its purpose is to let a new agent underst
 - Volume is clamped to 0–100%; mute preserves the logical volume.
 - Repeat modes are Off, All, and One. Repeat One applies to automatic EOF, while manual Next still advances.
 - Shuffle uses a bag to avoid repeats within one cycle and a history stack for Previous.
+- With one current track, Shuffle + Repeat All starts the next cycle by replaying that track instead of attempting to pop an empty bag.
 - Batch insertion appends only new indices to an active shuffle bag instead of rebuilding the cycle.
 - Saved repeat and shuffle values are restored into the playlist during startup.
 - Playback completion and errors cross from NAudio into the UI loop through a bounded, generation-tagged event queue; stale events are ignored.
@@ -216,7 +217,7 @@ dotnet build Yacplayer.sln -c Release
 dotnet test Yacplayer.sln -c Release
 ```
 
-Add focused tests for changed device-independent behavior. The current suite covers CLI rejection, playlist repeat/removal/shuffle, ring wrapping/latest reads, gated pre-volume PCM tapping, ANSI diff/color/batching, settings round trip and malformed JSON, synthetic spectrum/tempo analysis, extracted player/browser layouts, browser-controller deduplication, metadata fallback, and browser sorting/filtering.
+Add focused tests for changed device-independent behavior. The current suite covers CLI rejection, playlist repeat/removal/shuffle including the single-track Repeat All boundary, ring wrapping/latest reads, gated pre-volume PCM tapping, ANSI diff/color/batching, settings round trip and malformed JSON, synthetic spectrum/tempo analysis, extracted player/browser layouts, browser-controller deduplication, metadata fallback, and browser sorting/filtering.
 
 Automated tests do not verify real WASAPI behavior. Audio, terminal, or packaging work should also record an appropriate manual smoke check when the environment permits:
 
@@ -298,6 +299,7 @@ Local-only caution at the time of this update: `yacplayer-history-backup-2026110
 
 Update this section after every material change.
 
+- Single-track shuffle crash fixed on 2026-11-05: after refilling an exhausted shuffle bag, `Playlist.Next` now handles the still-empty one-track Repeat All cycle by replaying the current item instead of calling `PopBag` with count zero. Added coverage for manual Next, automatic EOF, and unchanged Repeat Off termination. Focused whitespace verification and the regression passed; `dotnet build Yacplayer.sln -c Release --no-restore` succeeded with 0 warnings/0 errors; `dotnet test Yacplayer.sln -c Release --no-build` passed 29/29 tests. Real playback smoke testing remains pending.
 - `App` decomposition on 2026-11-04: reduced `App.cs` from 727 to 418 lines and left it as composition root, event loop, and command router. Browser loading/navigation/deduplication moved to `BrowserController`; current-track metadata cancellation/completions to `CurrentTrackMetadataLoader`; visualizer/realtime DSP coordination to `VisualizationPipeline`; all player/browser layouts and viewports to `AppRenderer`. Added internal-boundary access for tests plus renderer-layout and browser-deduplication regressions. `dotnet format Yacplayer.sln whitespace` was applied to the changed source/test files, `dotnet build Yacplayer.sln -c Release --no-restore` succeeded with 0 warnings/0 errors, and `dotnet test Yacplayer.sln -c Release --no-build` passed 28/28 tests. Manual TUI/WASAPI smoke testing remains pending.
 - Realtime audio-analysis panel added on 2026-11-04: `B` toggles a persisted third bottom panel containing RMS/peak/crest, zero-crossing rate, spectral centroid, dominant frequency, beat pulse, and heuristic BPM/confidence. A separate bounded pre-volume ring is written only while enabled, and the UI-thread analyzer is not invoked while disabled. Added regression tests for tap gating, synthetic tone/tempo analysis, and settings persistence. `dotnet format Yacplayer.sln whitespace --include src/Yacplayer/App.cs src/Yacplayer/Audio/AudioEngine.cs src/Yacplayer/Audio/PcmTapSampleProvider.cs src/Yacplayer/Cli/Arguments.cs src/Yacplayer/Configuration/PlayerSettings.cs src/Yacplayer/Dsp/RealtimeAudioAnalyzer.cs --no-restore --verify-no-changes` succeeded; `dotnet build Yacplayer.sln -c Release` succeeded with 0 warnings/0 errors; `dotnet test Yacplayer.sln -c Release --no-build` passed 26/26 tests. Real-audio BPM accuracy, WASAPI behavior, and TUI layout remain manually unverified.
 - Large-folder responsiveness update on 2026-11-04: browser directory enumeration now runs as a cancellable generation-tagged background request whose completion is applied by the UI loop, avoiding render/input stalls while a folder opens. Browser queue additions use a persistent case-insensitive path set and one `Playlist.AddRange`; active shuffle cycles append only the new indices instead of rebuilding the bag. `FileBrowser` uses enumerated filesystem attributes instead of a separate `Directory.Exists` call per entry. Added shuffle-cycle and cancellation regressions; `dotnet build Yacplayer.sln -c Release` succeeded with 0 warnings/0 errors and `dotnet test Yacplayer.sln -c Release --no-build` passed 23/23 tests. Manual TUI testing with a large/slow directory remains pending.
