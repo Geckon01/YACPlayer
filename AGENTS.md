@@ -27,10 +27,11 @@ Do not remove or weaken this contract. Its purpose is to let a new agent underst
 - Audio: NAudio 3.3.0, `AudioFileReader`, and WASAPI shared mode with requested 100 ms latency.
 - UI: custom ANSI/VT alternate-screen renderer; there is no GUI framework.
 - Visualizers: colored FFT spectrum, real-time PCM waveform, and Off; visualization PCM is tapped before output volume/mute.
+- Optional real-time analysis: a separately gated pre-volume PCM tap feeds UI-thread RMS/peak/crest, zero-crossing, spectral centroid/dominant-frequency, beat-pulse, and heuristic BPM/confidence calculation. `B` disables both the panel and this analysis path.
 - Metadata: ATL 7.19.0, loaded lazily for the current track only.
 - Persistence: per-user JSON at `%LOCALAPPDATA%\Yacplayer\settings.json`.
 - Distribution: framework-dependent win-x64 publish, optional win-x64 Native AOT publish, an Inno Setup 6 installer, and a self-contained x64 MSIX build for Microsoft Store.
-- Automated tests: 23 xUnit tests that avoid real audio hardware.
+- Automated tests: 26 xUnit tests that avoid real audio hardware.
 - License: MIT. The repository and user-facing documentation carry an AI-assisted/generated-code notice.
 - Public documentation is English-first with Russian counterparts.
 
@@ -78,6 +79,7 @@ Do not remove or weaken this contract. Its purpose is to let a new agent underst
 - Spectrum columns use `█`, with a smooth ANSI true-color green/yellow/red gradient based on height and a yellow top marker.
 - `V` cycles Spectrum → Waveform → Off. Switching mode resets visualization backlog, and FFT is not calculated in Waveform or Off modes.
 - The waveform draws a normalized min/max envelope with green `.` characters. The dot glyph is the current intentional design.
+- `B` toggles the persisted Realtime Audio panel in sufficiently wide layouts. When off, the secondary tap stops writing and the level/spectral/tempo analyzer is not invoked.
 
 ### Metadata and settings
 
@@ -85,7 +87,7 @@ Do not remove or weaken this contract. Its purpose is to let a new agent underst
 - Only the currently playing entry is loaded through ATL. Cancellation follows track changes; the worker posts a completion to the UI loop rather than mutating the entry directly.
 - Settings validation clamps volume, accepts only 30/60 FPS and 2048/4096 FFT sizes, validates enums, and drops a missing last-directory path.
 - Malformed JSON is moved to `settings.json.bad` when possible. Saves use `settings.json.tmp` followed by replacement.
-- Volume, mute, visualizer mode, repeat, shuffle, recursive mode, FFT size, FPS, and last directory are represented in settings.
+- Volume, mute, visualizer mode, real-time analysis, repeat, shuffle, recursive mode, FFT size, FPS, and last directory are represented in settings.
 
 ### Packaging and branding
 
@@ -104,7 +106,8 @@ Program / CLI
         -> AudioEngine
             -> AudioFileReader
             -> PcmTapSampleProvider
-                -> SampleRingBuffer -> SpectrumAnalyzer or waveform reader
+                -> visualization SampleRingBuffer -> SpectrumAnalyzer or waveform reader
+                -> gated analysis SampleRingBuffer -> RealtimeAudioAnalyzer
             -> VolumeSampleProvider -> WasapiPlayer -> Windows default output device
             -> bounded AudioEventQueue -> UI-owned EOF/error handling
         -> MetadataService -> ConcurrentQueue -> UI-owned TrackEntry update
@@ -124,7 +127,8 @@ Ownership and safety invariants:
 
 - There must be at most one active decoder/output pair.
 - Audio callback code must not perform FFT, terminal work, metadata parsing, JSON/file persistence, logging, blocking waits, or unbounded allocation.
-- Visualization transport must remain bounded and must never block playback.
+- Visualization and analysis transports must remain bounded and must never block playback.
+- Disabling real-time analysis must stop its callback-side ring writes and all UI-thread analysis, not merely hide the panel.
 - Playlist/browser state is owned by the UI loop; audio callbacks may publish events but must not transition playlist or audio state.
 - Queue deletion must never become disk deletion without an explicit separately reviewed feature.
 - User-controlled text must pass through `ScreenBuffer.Write`; never inject raw escape sequences into UI content.
@@ -142,7 +146,7 @@ Ownership and safety invariants:
 | `src/Yacplayer/Configuration/` | Settings model, source-generated JSON context, atomic-ish storage |
 | `src/Yacplayer/Library/` | Playlist, queue model, browser/scan logic, lazy metadata service |
 | `src/Yacplayer/Audio/` | NAudio/WASAPI lifecycle, PCM tap, snapshot, bounded sample ring |
-| `src/Yacplayer/Dsp/` | Hann-windowed FFT and logarithmic spectrum bands |
+| `src/Yacplayer/Dsp/` | Spectrum FFT/bands and real-time level, spectral, beat, and tempo analysis |
 | `src/Yacplayer/Terminal/` | Alternate-screen lifetime and styled differential rendering |
 | `tests/Yacplayer.Tests/` | Device-independent xUnit tests |
 | `.github/workflows/tests.yml` | Windows Release build and test workflow for pushes and pull requests |
@@ -209,7 +213,7 @@ dotnet build Yacplayer.sln -c Release
 dotnet test Yacplayer.sln -c Release
 ```
 
-Add focused tests for changed device-independent behavior. The current suite covers CLI rejection, playlist repeat/removal/shuffle, ring wrapping/latest reads, ANSI diff/color/batching, settings round trip and malformed JSON, synthetic FFT, metadata fallback, and browser sorting/filtering.
+Add focused tests for changed device-independent behavior. The current suite covers CLI rejection, playlist repeat/removal/shuffle, ring wrapping/latest reads, gated pre-volume PCM tapping, ANSI diff/color/batching, settings round trip and malformed JSON, synthetic spectrum/tempo analysis, metadata fallback, and browser sorting/filtering.
 
 Automated tests do not verify real WASAPI behavior. Audio, terminal, or packaging work should also record an appropriate manual smoke check when the environment permits:
 
@@ -246,6 +250,7 @@ The detailed backlog is [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md). Keep this 
 - Replace delay-after-work scheduling with monotonic frame deadlines and a lower idle rate.
 - Add input/layout snapshots, concurrent ring stress tests, generated-WAV integration tests, optional WASAPI smoke tests, installer tests, and long-running soak coverage.
 - Calculate/display bitrate if it becomes a supported metadata field; preserve the current lazy-current-track policy unless requirements change.
+- Treat realtime BPM as a heuristic estimate: it needs several seconds and may select half/double tempo; improve onset filtering and multi-hypothesis tracking before using it for synchronization.
 - Reformat dense one-line code in the remaining domain classes and tests when doing so can remain a reviewable style-only change.
 
 ## Platform status and portability
@@ -291,6 +296,7 @@ Local-only caution at the time of this update: `yacplayer-history-backup-2026110
 
 Update this section after every material change.
 
+- Realtime audio-analysis panel added on 2026-11-04: `B` toggles a persisted third bottom panel containing RMS/peak/crest, zero-crossing rate, spectral centroid, dominant frequency, beat pulse, and heuristic BPM/confidence. A separate bounded pre-volume ring is written only while enabled, and the UI-thread analyzer is not invoked while disabled. Added regression tests for tap gating, synthetic tone/tempo analysis, and settings persistence. `dotnet format Yacplayer.sln whitespace --include src/Yacplayer/App.cs src/Yacplayer/Audio/AudioEngine.cs src/Yacplayer/Audio/PcmTapSampleProvider.cs src/Yacplayer/Cli/Arguments.cs src/Yacplayer/Configuration/PlayerSettings.cs src/Yacplayer/Dsp/RealtimeAudioAnalyzer.cs --no-restore --verify-no-changes` succeeded; `dotnet build Yacplayer.sln -c Release` succeeded with 0 warnings/0 errors; `dotnet test Yacplayer.sln -c Release --no-build` passed 26/26 tests. Real-audio BPM accuracy, WASAPI behavior, and TUI layout remain manually unverified.
 - Large-folder responsiveness update on 2026-11-04: browser directory enumeration now runs as a cancellable generation-tagged background request whose completion is applied by the UI loop, avoiding render/input stalls while a folder opens. Browser queue additions use a persistent case-insensitive path set and one `Playlist.AddRange`; active shuffle cycles append only the new indices instead of rebuilding the bag. `FileBrowser` uses enumerated filesystem attributes instead of a separate `Directory.Exists` call per entry. Added shuffle-cycle and cancellation regressions; `dotnet build Yacplayer.sln -c Release` succeeded with 0 warnings/0 errors and `dotnet test Yacplayer.sln -c Release --no-build` passed 23/23 tests. Manual TUI testing with a large/slow directory remains pending.
 - Playback ownership/settings cleanup on 2026-11-04: restored saved repeat/shuffle state into `Playlist`, removed the nonfunctional fullscreen-visualizer setting and `H` control, and replaced direct NAudio EOF/error callbacks with a bounded, generation-tagged `AudioEventQueue` drained by the UI loop. Added regression coverage for idempotent shuffle restoration, bounded queue overflow, and removal of the obsolete help entry. `dotnet build Yacplayer.sln -c Release` succeeded with 0 warnings/0 errors and `dotnet test Yacplayer.sln -c Release --no-build` passed 21/21 tests. Real WASAPI natural-EOF/error and TUI smoke testing remains pending.
 - README FAQ update on 2026-11-04: renamed the troubleshooting section to FAQ in both language variants, converted its entries to question-and-answer wording, and added an explanation of the Windows-only target and the work required for real Linux/macOS support. Relative documentation links and Markdown formatting were checked without rebuilding code.

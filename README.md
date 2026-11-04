@@ -22,6 +22,7 @@ Implemented:
 - cancellable background directory loading that keeps the TUI responsive, plus hash-based deduplication and batch queue insertion for large folders;
 - adaptive ANSI/VT interface with colored panels, white captions on green title backgrounds, the current version in the top-right header, and differential rendering with full-row refresh for variable-width Unicode;
 - switchable Hann-windowed FFT spectrum with a smooth true-color green/yellow/red gradient, `.` waveform, and disabled visualizer modes; spectrum and waveform amplitude are independent of output volume and mute;
+- optional realtime audio-analysis panel with estimated BPM/beat confidence, rhythm pulse, RMS/peak/crest levels, zero-crossing rate, spectral centroid, and dominant frequency; its PCM tap and calculations stop when disabled;
 - per-user JSON settings;
 - CLI, Release publishing, and an Inno Setup installer;
 - reproducible self-contained MSIX packaging for Microsoft Store submission;
@@ -32,6 +33,7 @@ Known limitations:
 - ATL metadata is loaded lazily only for the current track; entries that have never played retain filename/`Unknown artist` fallbacks, and bitrate is not calculated;
 - interactive queue search, mouse input, OGG, and Opus are not implemented;
 - actual WASAPI and codec behavior still requires manual verification on a machine with an audio device.
+- BPM is a realtime signal estimate rather than embedded metadata; it needs several seconds to stabilize and may choose a half/double tempo for rhythmically ambiguous material.
 
 ## Requirements
 
@@ -106,6 +108,7 @@ When stdin or stdout is redirected, the interactive TUI is not started. The proc
 | `S` | Toggle shuffle |
 | `R` | Repeat Off → All → One |
 | `V` | Spectrum → Waveform → Off; the panel title follows the active mode |
+| `B` | Toggle the realtime audio-analysis panel and its calculations |
 | `F` | Open the file browser |
 | `?` | Open the in-application help |
 | `Q` | Shut down cleanly |
@@ -151,6 +154,7 @@ Settings file: `%LOCALAPPDATA%\Yacplayer\settings.json`.
   "Fps": 30,
   "FftSize": 2048,
   "VisualizerMode": "Spectrum",
+  "RealtimeAnalysisEnabled": true,
   "RepeatMode": "Off",
   "Shuffle": false,
   "Recursive": false,
@@ -170,7 +174,7 @@ dotnet test Yacplayer.sln -c Release
 
 GitHub Actions runs the same restore, Release build, and test sequence on Windows for every push and pull request.
 
-The current suite contains 23 device-independent unit tests covering CLI parsing, four-part assembly versioning, playlist behavior and restored repeat/shuffle state, batch insertion during an active shuffle cycle, bounded audio-event delivery, list viewport scrolling/clamping, ring-buffer wrapping/latest reads, pre-volume PCM tapping, ANSI/true-color diff styles, batching and Unicode-row refresh, settings, FFT, metadata fallback, and cancellable browser filtering/sorting.
+The current suite contains 26 device-independent unit tests covering CLI parsing, four-part assembly versioning, playlist behavior and restored repeat/shuffle state, batch insertion during an active shuffle cycle, bounded audio-event delivery, list viewport scrolling/clamping, ring-buffer wrapping/latest reads, independently gated pre-volume PCM tapping, realtime level/spectrum/tempo analysis, ANSI/true-color diff styles, batching and Unicode-row refresh, settings, FFT, metadata fallback, and cancellable browser filtering/sorting.
 
 Framework-dependent win-x64 publish:
 

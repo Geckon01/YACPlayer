@@ -22,6 +22,7 @@ Yacplayer — локальный музыкальный плеер для Window
 - отменяемая фоновая загрузка каталогов без остановки TUI, hash-дедупликация и пакетное добавление больших папок в очередь;
 - адаптивный ANSI/VT-интерфейс с цветными панелями, белыми надписями на зелёном фоне заголовков, текущей версией справа в верхней рамке и diff-rendering с полной перерисовкой строк для Unicode переменной ширины;
 - переключаемые FFT-спектр с Hann window и плавным true-color градиентом зелёный/жёлтый/красный, waveform из `.` и отключённый режим визуализатора; амплитуда спектра и waveform не зависит от выходной громкости и mute;
+- опциональная панель realtime audio analysis: оценка BPM/beat confidence, индикатор ритма, RMS/peak/crest, zero-crossing rate, spectral centroid и dominant frequency; при отключении останавливаются PCM tap и вычисления;
 - JSON-настройки в профиле пользователя;
 - CLI, Release publish и установщик Inno Setup;
 - воспроизводимая self-contained MSIX-сборка для Microsoft Store;
@@ -32,6 +33,7 @@ Yacplayer — локальный музыкальный плеер для Window
 - ATL-метаданные лениво загружаются только для текущего трека; ещё не воспроизводившиеся элементы используют имя файла/`Unknown artist`, а bitrate не вычисляется;
 - интерактивный поиск очереди, mouse input, OGG и Opus отсутствуют;
 - WASAPI и реальные кодеки требуют ручной проверки на машине со звуковым устройством.
+- BPM оценивается по realtime-сигналу, а не читается из metadata: стабилизация занимает несколько секунд, а для неоднозначного ритма возможен выбор половинного/двойного темпа.
 
 ## Системные требования
 
@@ -106,6 +108,7 @@ yacplayer [path] [--recursive] [--fps 30|60] [--no-visualizer]
 | `S` | Shuffle on/off |
 | `R` | Repeat Off → All → One |
 | `V` | Spectrum → Waveform → Off; заголовок панели отражает активный режим |
+| `B` | Включить/выключить панель realtime audio analysis вместе с вычислениями |
 | `F` | Открыть файловый браузер |
 | `?` | Открыть встроенную справку |
 | `Q` | Корректно завершить работу |
@@ -151,6 +154,7 @@ yacplayer [path] [--recursive] [--fps 30|60] [--no-visualizer]
   "Fps": 30,
   "FftSize": 2048,
   "VisualizerMode": "Spectrum",
+  "RealtimeAnalysisEnabled": true,
   "RepeatMode": "Off",
   "Shuffle": false,
   "Recursive": false,
@@ -170,7 +174,7 @@ dotnet test Yacplayer.sln -c Release
 
 GitHub Actions выполняет ту же последовательность restore, Release-сборки и тестов на Windows для каждого push и pull request.
 
-Текущий набор содержит 23 unit-теста без требования аудиоустройства: CLI, четырёхкомпонентная assembly version, playlist и восстановление repeat/shuffle, batch insert внутри активного shuffle-cycle, bounded audio-event delivery, прокрутка/clamp list viewport, ring buffer wrapping/latest reads, pre-volume PCM tap, ANSI/true-color diff styles, batching и обновление Unicode-строк, settings, FFT, metadata fallback и отменяемая browser filtering/sorting.
+Текущий набор содержит 26 unit-тестов без требования аудиоустройства: CLI, четырёхкомпонентная assembly version, playlist и восстановление repeat/shuffle, batch insert внутри активного shuffle-cycle, bounded audio-event delivery, прокрутка/clamp list viewport, ring buffer wrapping/latest reads, независимо отключаемый pre-volume PCM tap, realtime level/spectrum/tempo analysis, ANSI/true-color diff styles, batching и обновление Unicode-строк, settings, FFT, metadata fallback и отменяемая browser filtering/sorting.
 
 Публикация framework-dependent win-x64:
 

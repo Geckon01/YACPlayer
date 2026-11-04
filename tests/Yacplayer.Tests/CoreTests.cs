@@ -73,5 +73,21 @@ public class CoreTests
     [Fact] public void ScreenDiffRepaintsRowsThatContainVariableWidthUnicode() { var previous=new ScreenBuffer(8,1); previous.Write(0,0,"曲"); var current=new ScreenBuffer(8,1); current.Write(0,0,"曲"); var diff=current.Diff(previous); Assert.Contains("\u001b[2K",diff); Assert.Contains("曲",diff); var plainPrevious=new ScreenBuffer(8,1); plainPrevious.Write(0,0,"████"); var plainCurrent=new ScreenBuffer(8,1); plainCurrent.Write(0,0,"████"); Assert.Equal("",plainCurrent.Diff(plainPrevious)); var cleared=new ScreenBuffer(8,1); Assert.Contains("\u001b[2K",cleared.Diff(current)); }
     [Fact] public void ListViewportKeepsTargetVisibleWithMargin() { var viewport=new ListViewport(); viewport.EnsureVisible(50,100,10); Assert.Equal(42,viewport.Offset); viewport.EnsureVisible(43,100,10); Assert.Equal(42,viewport.Offset); viewport.EnsureVisible(10,100,10); Assert.Equal(9,viewport.Offset); }
     [Fact] public void ListViewportClampsAfterCollectionOrWindowChanges() { var viewport=new ListViewport(); viewport.EnsureVisible(90,100,10); Assert.Equal(82,viewport.Offset); viewport.EnsureVisible(2,3,20); Assert.Equal(0,viewport.Offset); viewport.EnsureVisible(0,0,10); Assert.Equal(0,viewport.Offset); }
+    [Fact]
+    public async Task SettingsPersistRealtimeAnalysisToggle()
+    {
+        var directory = Directory.CreateTempSubdirectory();
+        try
+        {
+            var store = new SettingsStore(System.IO.Path.Combine(directory.FullName, "analysis.json"));
+            await store.SaveAsync(new PlayerSettings { RealtimeAnalysisEnabled = false });
+            var loaded = await store.LoadAsync();
+            Assert.False(loaded.RealtimeAnalysisEnabled);
+        }
+        finally
+        {
+            directory.Delete(true);
+        }
+    }
     [Fact] public async Task SettingsRoundTripAndValidate() { var dir = Directory.CreateTempSubdirectory(); try { var path = System.IO.Path.Combine(dir.FullName,"s.json"); var store = new SettingsStore(path); await store.SaveAsync(new(){Volume=999,Fps=7}); var loaded=await store.LoadAsync(); Assert.Equal(100,loaded.Volume); Assert.Equal(30,loaded.Fps); await File.WriteAllTextAsync(path,"{"); loaded=await store.LoadAsync(); Assert.Equal(75,loaded.Volume); } finally { dir.Delete(true); } }
 }

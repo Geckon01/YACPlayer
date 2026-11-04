@@ -13,6 +13,52 @@ public class DspAndMetadataTests
         Assert.Equal(2, volume.Read(output)); Assert.Equal([0.2f, -0.1f], output);
         var captured = new float[2]; Assert.Equal(2, ring.Read(captured)); Assert.Equal([0.8f, -0.4f], captured);
     }
+    [Fact]
+    public void RealtimeAnalysisTapCanBeDisabledIndependently()
+    {
+        var source = new ArraySampleProvider([0.1f, 0.2f, 0.3f, 0.4f]);
+        var visualization = new SampleRingBuffer(8);
+        var analysis = new SampleRingBuffer(8);
+        var tap = new PcmTapSampleProvider(source, visualization, analysis);
+        var output = new float[2];
+
+        Assert.Equal(2, tap.Read(output));
+        Assert.Equal(0, analysis.Count);
+
+        tap.AnalysisEnabled = true;
+        Assert.Equal(2, tap.Read(output));
+        Assert.Equal(2, analysis.Count);
+        Assert.Equal(4, visualization.Count);
+    }
+    [Fact]
+    public void RealtimeAnalyzerFindsToneLevelAndSyntheticTempo()
+    {
+        const int sampleRate = 48000;
+        const int frameSize = 1024;
+        var ring = new SampleRingBuffer(frameSize * 4);
+        var analyzer = new RealtimeAudioAnalyzer(ring);
+        var snapshot = analyzer.Analyze(sampleRate);
+
+        for (var frame = 0; frame < 400; frame++)
+        {
+            var amplitude = frame % 23 == 0 ? 0.9 : 0.05;
+            var samples = new float[frameSize];
+            for (var index = 0; index < samples.Length; index++)
+            {
+                var sampleIndex = frame * frameSize + index;
+                samples[index] = (float)(amplitude * Math.Sin(2 * Math.PI * 440 * sampleIndex / sampleRate));
+            }
+
+            ring.Write(samples);
+            snapshot = analyzer.Analyze(sampleRate);
+        }
+
+        Assert.True(snapshot.Available);
+        Assert.InRange(snapshot.DominantFrequencyHz, 420, 460);
+        Assert.InRange(snapshot.Bpm, 115, 130);
+        Assert.True(snapshot.BeatConfidence > 0.3f);
+        Assert.InRange(snapshot.PeakDbfs, -30, 0);
+    }
     [Fact] public async Task MetadataUsesFallbacksForMissingFile()
     {
         var path=System.IO.Path.Combine(System.IO.Path.GetTempPath(),Guid.NewGuid()+".mp3");

@@ -12,7 +12,7 @@ The target is Windows x64, `.NET 10`, and `net10.0-windows`. The application shi
 
 1. **One process and one shipping project.** There are no services, IPC endpoints, databases, or plugin hosts.
 2. **Audio is isolated from presentation work.** NAudio/WASAPI requests decoded PCM; FFT, metadata, JSON, and terminal rendering do not execute in the audio callback.
-3. **Bounded sample transport.** The PCM tap writes to a fixed-size ring. Under overload, stale visualization samples are discarded instead of blocking playback.
+3. **Bounded sample transport.** The PCM tap writes to fixed-size visualization and optional analysis rings. Under overload, stale samples are discarded instead of blocking playback.
 4. **UI-owned application state.** `App` currently owns the event loop, keyboard routing, browser state, playlist orchestration, DSP sampling, and layout.
 5. **Device-independent domain tests.** Playlist, ring, FFT, settings, browser filtering, and terminal diff logic can run without WASAPI hardware.
 6. **Declarative terminal frames.** A complete `ScreenBuffer` is built first and compared with the preceding frame to produce an ANSI diff.
@@ -31,11 +31,14 @@ flowchart LR
     Reader --> Tap["PcmTapSampleProvider"]
     Tap --> Volume["VolumeSampleProvider"]
     Volume --> WASAPI["Windows WASAPI shared"]
-    Tap --> Ring["SampleRingBuffer"]
+    Tap --> Ring["Visualization ring"]
     Ring --> FFT["SpectrumAnalyzer / FftFlat"]
     Ring --> Wave["Latest PCM waveform"]
+    Tap -->|"gated by B"| AnalysisRing["Analysis ring"]
+    AnalysisRing --> Realtime["RealtimeAudioAnalyzer"]
     FFT --> App
     Wave --> App
+    Realtime --> App
     App --> Screen["ScreenBuffer"]
     Screen --> Terminal["ANSI/VT terminal"]
     Settings["settings.json"] <--> App
@@ -67,10 +70,11 @@ xUnit, Microsoft.NET.Test.Sdk, coverlet, and the VS xUnit runner are test-only d
 | `Library/TrackEntry.cs` | Queue and metadata model |
 | `Library/MetadataService.cs` | Background ATL loader for the current track |
 | `Audio/AudioEngine.cs` | Decoder/output lifecycle and playback commands |
-| `Audio/PcmTapSampleProvider.cs` | PCM forwarding and mono visualization tap |
+| `Audio/PcmTapSampleProvider.cs` | PCM forwarding plus mono visualization and gated analysis taps |
 | `Audio/SampleRingBuffer.cs` | Bounded transport between audio and DSP |
 | `Audio/PlaybackSnapshot.cs` | Immutable UI-facing playback state |
 | `Dsp/SpectrumAnalyzer.cs` | Hann window, FFT, logarithmic bands, normalization |
+| `Dsp/RealtimeAudioAnalyzer.cs` | Levels, zero-crossing, spectral features, beat pulse, and heuristic tempo |
 | `Terminal/TerminalSession.cs` | Alternate-screen lifetime management |
 | `Terminal/ScreenBuffer.cs` | Styled cells, clipping, sanitization, ANSI diff batching |
 | `tests/Yacplayer.Tests/` | Device-independent unit tests |
@@ -138,11 +142,12 @@ Each frame:
 3. Reads terminal width and height inside an exception boundary.
 4. obtains a `PlaybackSnapshot`;
 5. runs only the active visualizer path: FFT plus smoothing for `Spectrum`, a latest-sample read for `Waveform`, and no DSP read for `Off`;
-6. resets pending visualization data when the mode changes;
-7. creates a `ScreenBuffer` matching the current terminal size;
-8. builds either browser or player layout;
-9. diffs the frame against the previous one and writes ANSI output;
-10. waits `1000 / FPS` milliseconds with cancellation.
+6. when realtime analysis is enabled and playback is active, consumes its separate ring and updates level, spectral, beat, and tempo estimates; when disabled, neither this step nor its callback-side ring write runs;
+7. resets pending visualization or analysis data when its mode/generation changes;
+8. creates a `ScreenBuffer` matching the current terminal size;
+9. builds either browser or player layout;
+10. diffs the frame against the previous one and writes ANSI output;
+11. waits `1000 / FPS` milliseconds with cancellation.
 
 The loop does not busy-spin. The requested FPS is an upper bound because frame work is added before the fixed delay.
 
@@ -240,11 +245,13 @@ The UI does not receive decoder/output objects. `PlaybackSnapshot` exposes state
 
 ## 11. PCM tap and ring buffer
 
-`PcmTapSampleProvider` forwards decoded samples while also copying mono data to the ring. `VolumeSampleProvider` follows the tap, so output volume and mute affect WASAPI playback but do not alter spectrum or waveform amplitude. Mono input is written in one block; multichannel frames are averaged across channels.
+`PcmTapSampleProvider` forwards decoded samples while also copying mono data to the visualization ring and, only while enabled, a separate analysis ring. `VolumeSampleProvider` follows the tap, so output volume and mute affect WASAPI playback but do not alter visualization or analysis. Mono input is written in one block; multichannel frames are averaged across channels.
 
-The tap does not perform FFT, logging, JSON, metadata, or terminal I/O.
+The tap does not perform FFT, tempo estimation, logging, JSON, metadata, or terminal I/O. `AudioEngine.SetRealtimeAnalysis(false)` gates the secondary ring write and resets its transport generation; `App` then stops invoking `RealtimeAudioAnalyzer` as well as hiding its panel.
 
 `SampleRingBuffer` owns a fixed `float[]` and monotonically increasing read/write counters with modulo addressing. On overflow, the producer advances the minimum read position so the oldest visualization samples are discarded. `Reset` moves read to the current write position after stop, seek, track change, or visualizer-mode change. `ReadLatest` copies the newest block and discards older backlog for the waveform.
+
+`RealtimeAudioAnalyzer` runs on the UI loop. It derives RMS and peak dBFS, crest factor, zero-crossing rate, spectral centroid and dominant frequency from bounded windows. A short-time energy onset history provides a beat pulse and autocorrelation-based 60–200 BPM estimate after several seconds of audio. This is a lightweight realtime estimate, not embedded BPM metadata or a production beat tracker; rhythmically ambiguous tracks can yield half/double tempo.
 
 The intended concurrency model is one producer and one consumer. The present volatile-counter implementation is not claimed as a formally proven lock-free algorithm; producer and consumer can both update `_read` during overflow, which is a hardening target.
 
@@ -323,7 +330,7 @@ Validation:
 
 `SettingsStore.LoadAsync` returns defaults for a missing file or IO failure. Malformed JSON is moved to `.bad` when possible. `SaveAsync` creates the parent directory, writes `.tmp`, then moves it over the destination.
 
-CLI FPS, recursive, and no-visualizer flags override the in-memory model. Loaded repeat/shuffle values are applied to `Playlist` during startup. Shutdown stores current volume, mute, repeat, shuffle, and the remaining settings.
+CLI FPS, recursive, and no-visualizer flags override the in-memory model. Loaded repeat/shuffle values are applied to `Playlist` during startup. `RealtimeAnalysisEnabled` controls the persisted `B` toggle and defaults to true. Shutdown stores current volume, mute, repeat, shuffle, analysis state, and the remaining settings.
 
 ## 16. Metadata
 
@@ -352,7 +359,7 @@ CLI FPS, recursive, and no-visualizer flags override the in-memory model. Loaded
 ## 18. Threading model
 
 - Main async context: input, playlist/browser state, DSP, layout, and settings orchestration.
-- NAudio playback thread: provider reads, mono tap, ring writes.
+- NAudio playback thread: provider reads, mono downmix, always-on visualization writes, and conditionally enabled analysis-ring writes.
 - Thread pool: directory enumeration/scanning and isolated metadata loads.
 - NAudio event context: `PlaybackStopped` only attempts a bounded channel write.
 
@@ -361,6 +368,7 @@ No unbounded thread creation is present. The ring, bounded audio-event channel, 
 ## 19. Resource and performance characteristics
 
 - PCM ring: 32,768 mono floats, approximately 128 KiB.
+- Realtime-analysis ring: 65,536 mono floats, approximately 256 KiB; writes and consumer DSP are disabled by `B`.
 - Requested WASAPI latency: 100 ms.
 - UI FPS: 30 default, 60 optional.
 - FFT: 2048 default; settings also accept 4096.
@@ -384,6 +392,7 @@ Covered:
 - identical terminal frames, one-cell/color changes, and ANSI batching;
 - settings validation, round trip, and malformed JSON;
 - silence and synthetic 1 kHz FFT input;
+- gated pre-volume analysis tapping and synthetic level/frequency/tempo input;
 - nonfatal metadata fallback;
 - browser directory-first sorting and extension filtering.
 

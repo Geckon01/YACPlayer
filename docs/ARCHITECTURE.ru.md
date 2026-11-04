@@ -12,7 +12,7 @@
 
 1. **Один процесс, один shipping project.** Нет сервисов, IPC, базы данных и plugin host.
 2. **Audio path отделён от UI.** Декодирование и выдача PCM инициируются NAudio/WASAPI; FFT и ANSI-rendering не выполняются внутри audio callback.
-3. **Bounded data flow.** PCM tap пишет в кольцевой буфер фиксированного размера. При перегрузке старые samples вытесняются, а воспроизведение не ждёт визуализатор.
+3. **Bounded data flow.** PCM tap пишет в visualization ring и опциональный analysis ring фиксированного размера. При перегрузке старые samples вытесняются, а воспроизведение не ждёт DSP consumer.
 4. **UI управляет состоянием.** `App` содержит event loop, keyboard dispatch, browser state, playlist orchestration, DSP sampling и layout.
 5. **Доменная логика тестируема без устройства.** Playlist, ring buffer, FFT, settings, browser filtering и terminal diff не требуют WASAPI.
 6. **Terminal output строится декларативно.** Каждый кадр сначала формируется в `ScreenBuffer`, затем сравнивается с предыдущим и превращается в минимизированный ANSI diff.
@@ -31,11 +31,14 @@ flowchart LR
     NAudio --> Tap["PcmTapSampleProvider"]
     Tap --> Volume["VolumeSampleProvider"]
     Volume --> WASAPI["Windows WASAPI shared"]
-    Tap --> Ring["SampleRingBuffer"]
+    Tap --> Ring["Visualization ring"]
     Ring --> FFT["SpectrumAnalyzer / FftFlat"]
     Ring --> Wave["Latest PCM waveform"]
+    Tap -->|"gated by B"| AnalysisRing["Analysis ring"]
+    AnalysisRing --> Realtime["RealtimeAudioAnalyzer"]
     FFT --> App
     Wave --> App
+    Realtime --> App
     App --> Buffer["ScreenBuffer"]
     Buffer --> Terminal["ANSI/VT terminal"]
     Settings["settings.json"] <--> App
@@ -67,10 +70,11 @@ Test-only dependencies: xUnit, Microsoft.NET.Test.Sdk, coverlet collector, xUnit
 | `Library/TrackEntry.cs` | Queue/media metadata model |
 | `Library/MetadataService.cs` | Фоновый ATL loader текущего трека |
 | `Audio/AudioEngine.cs` | Decoder/output lifecycle и playback commands |
-| `Audio/PcmTapSampleProvider.cs` | PCM forwarding и mono tap |
+| `Audio/PcmTapSampleProvider.cs` | PCM forwarding, mono visualization tap и gated analysis tap |
 | `Audio/SampleRingBuffer.cs` | Bounded sample transport между audio и DSP |
 | `Audio/PlaybackSnapshot.cs` | Immutable UI-facing playback snapshot |
 | `Dsp/SpectrumAnalyzer.cs` | Hann, FFT, log bands, normalization |
+| `Dsp/RealtimeAudioAnalyzer.cs` | Levels, zero-crossing, spectral features, beat pulse и эвристический tempo |
 | `Terminal/TerminalSession.cs` | Alternate-screen RAII |
 | `Terminal/ScreenBuffer.cs` | Styled cells, clipping/sanitization, ANSI diff batching |
 | `tests/Yacplayer.Tests/` | Unit tests чистой логики |
@@ -146,11 +150,12 @@ sequenceDiagram
 3. Безопасно читает `Console.WindowWidth/Height`; исключение разрывает loop.
 4. Получает `PlaybackSnapshot` из `AudioEngine`.
 5. Выполняет только активный путь визуализации: FFT со сглаживанием для `Spectrum`, чтение последних samples для `Waveform`, отсутствие DSP-чтения для `Off`.
-6. При смене режима сбрасывает накопленные данные визуализации.
-7. Создаёт новый `ScreenBuffer` текущего размера.
-8. Строит browser layout либо player layout.
-9. Вычисляет ANSI diff относительно прошлого кадра и пишет его в terminal.
-10. Делает `Task.Delay(1000 / FPS, token)`.
+6. Если realtime analysis включён и playback активен, читает отдельный ring и обновляет level, spectral, beat и tempo estimates; в выключенном состоянии не выполняются ни этот шаг, ни callback-side ring writes.
+7. При смене режима или generation сбрасывает накопленные данные визуализации/анализа.
+8. Создаёт новый `ScreenBuffer` текущего размера.
+9. Строит browser layout либо player layout.
+10. Вычисляет ANSI diff относительно прошлого кадра и пишет его в terminal.
+11. Делает `Task.Delay(1000 / FPS, token)`.
 
 Цикл не busy-spins. Фактический FPS является верхней границей: время обработки и rendering прибавляется к delay.
 
@@ -275,11 +280,14 @@ UI не получает decoder/output напрямую. `PlaybackSnapshot` с�
 
 ## 11. PCM tap и ring buffer
 
-`PcmTapSampleProvider` реализует `ISampleProvider` и прозрачно возвращает decoder output вызывающей стороне. `VolumeSampleProvider` расположен после tap, поэтому выходная громкость и mute влияют на WASAPI playback, но не меняют амплитуду spectrum или waveform.
+`PcmTapSampleProvider` реализует `ISampleProvider` и прозрачно возвращает decoder output вызывающей стороне. Mono data всегда копируется в visualization ring и только при включённом анализе — в отдельный analysis ring. `VolumeSampleProvider` расположен после tap, поэтому выходная громкость и mute влияют на WASAPI playback, но не меняют визуализацию или анализ.
 
 - mono input копируется в ring блоком;
 - multi-channel input downmix-ится средним арифметическим каналов на frame;
-- tap не выполняет FFT, logging, JSON, metadata или terminal I/O.
+- tap не выполняет FFT, tempo estimation, logging, JSON, metadata или terminal I/O;
+- `AudioEngine.SetRealtimeAnalysis(false)` прекращает запись во второй ring и меняет transport generation; `App` прекращает вызывать `RealtimeAudioAnalyzer` и скрывает панель.
+
+`RealtimeAudioAnalyzer` выполняется в UI-loop. Из ограниченных окон он получает RMS и peak dBFS, crest factor, zero-crossing rate, spectral centroid и dominant frequency. История short-time energy onsets даёт beat pulse и autocorrelation-оценку 60–200 BPM после нескольких секунд сигнала. Это лёгкая realtime-оценка, а не embedded BPM metadata или production beat tracker; неоднозначный ритм может дать половинный/двойной темп.
 
 `SampleRingBuffer` имеет фиксированный `float[]`, monotonically increasing `_write`/`_read` counters и modulo addressing.
 
@@ -404,7 +412,7 @@ Validation:
 
 `SaveAsync` создаёт directory, пишет `.tmp`, затем `File.Move(tmp, target, overwrite: true)`.
 
-CLI FPS, recursive и no-visualizer меняют in-memory settings текущего запуска. Загруженные `RepeatMode`/`Shuffle` применяются к `Playlist` при startup. На shutdown сохраняются volume, mute, repeat, shuffle и остальная модель.
+CLI FPS, recursive и no-visualizer меняют in-memory settings текущего запуска. Загруженные `RepeatMode`/`Shuffle` применяются к `Playlist` при startup. `RealtimeAnalysisEnabled` хранит состояние клавиши `B` и по умолчанию равен true. На shutdown сохраняются volume, mute, repeat, shuffle, состояние анализа и остальная модель.
 
 ## 16. Metadata
 
@@ -435,7 +443,7 @@ CLI FPS, recursive и no-visualizer меняют in-memory settings текуще
 Потоки/contexts:
 
 - main async thread: input, playlist state, browser state, DSP, layout, settings orchestration;
-- NAudio playback thread: calls provider `Read`, следовательно выполняет PCM tap/ring write;
+- NAudio playback thread: calls provider `Read`, выполняет downmix, постоянную запись visualization ring и условную запись analysis ring;
 - thread pool: directory enumeration/scan и isolated metadata load;
 - NAudio event context: `PlaybackStopped` только пытается записать событие в bounded channel.
 
@@ -444,6 +452,7 @@ CLI FPS, recursive и no-visualizer меняют in-memory settings текуще
 ## 19. Performance characteristics
 
 - PCM ring capacity: `32768` mono samples.
+- Realtime-analysis ring: `65536` mono samples; его запись и consumer DSP отключаются клавишей `B`.
 - WASAPI requested latency: `100 ms`.
 - UI FPS: `30` default, `60` optional.
 - FFT: `2048` default, `4096` accepted from settings.
@@ -468,6 +477,7 @@ CLI FPS, recursive и no-visualizer меняют in-memory settings текуще
 - identical screen diff, one-cell change, color-only change, ANSI run batching;
 - settings validate/roundtrip/bad JSON;
 - silence и 1 kHz synthetic FFT signal;
+- gated pre-volume analysis tap и synthetic level/frequency/tempo signal;
 - metadata fallback/nonfatal behavior;
 - browser directory-first sorting и extension filtering.
 

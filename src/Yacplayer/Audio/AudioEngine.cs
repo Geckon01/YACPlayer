@@ -6,24 +6,33 @@ namespace Yacplayer.Audio;
 public sealed class AudioEngine : IDisposable
 {
     private readonly SampleRingBuffer _ring;
+    private readonly SampleRingBuffer? _analysisRing;
     private readonly AudioEventQueue _events;
     private WasapiPlayer? _output;
     private AudioFileReader? _reader;
+    private PcmTapSampleProvider? _tap;
     private VolumeSampleProvider? _volumeProvider;
     private EventHandler<StoppedEventArgs>? _stoppedHandler;
     private string? _path;
     private int _volume = 75;
     private bool _muted;
+    private bool _realtimeAnalysisEnabled;
     private volatile bool _intentional;
     private long _generation;
+    private long _analysisGeneration;
 
-    public AudioEngine(SampleRingBuffer ring, AudioEventQueue events)
+    public AudioEngine(
+        SampleRingBuffer ring,
+        AudioEventQueue events,
+        SampleRingBuffer? analysisRing = null)
     {
         _ring = ring;
         _events = events;
+        _analysisRing = analysisRing;
     }
 
     public long Generation => Volatile.Read(ref _generation);
+    public long AnalysisGeneration => Volatile.Read(ref _analysisGeneration);
 
     public PlaybackSnapshot Snapshot => new(
         _output?.PlaybackState switch
@@ -49,8 +58,11 @@ public sealed class AudioEngine : IDisposable
         {
             _path = path;
             _reader = new(path);
-            var tap = new PcmTapSampleProvider(_reader, _ring);
-            _volumeProvider = new(tap);
+            _tap = new PcmTapSampleProvider(_reader, _ring, _analysisRing)
+            {
+                AnalysisEnabled = _realtimeAnalysisEnabled
+            };
+            _volumeProvider = new(_tap);
             ApplyVolume();
 
             _output = new WasapiPlayerBuilder()
@@ -98,6 +110,7 @@ public sealed class AudioEngine : IDisposable
         }
 
         _ring.Reset();
+        ResetAnalysisTransport();
     }
 
     public void Seek(double seconds)
@@ -112,6 +125,7 @@ public sealed class AudioEngine : IDisposable
             0,
             _reader.TotalTime.TotalSeconds));
         _ring.Reset();
+        ResetAnalysisTransport();
     }
 
     public void SetVolume(int value)
@@ -126,12 +140,34 @@ public sealed class AudioEngine : IDisposable
         ApplyVolume();
     }
 
+    public void SetRealtimeAnalysis(bool enabled)
+    {
+        if (_realtimeAnalysisEnabled == enabled)
+        {
+            return;
+        }
+
+        _realtimeAnalysisEnabled = enabled;
+        if (_tap is not null)
+        {
+            _tap.AnalysisEnabled = enabled;
+        }
+
+        ResetAnalysisTransport();
+    }
+
     private void ApplyVolume()
     {
         if (_volumeProvider is not null)
         {
             _volumeProvider.Volume = _muted ? 0 : _volume / 100f;
         }
+    }
+
+    private void ResetAnalysisTransport()
+    {
+        _analysisRing?.Reset();
+        Interlocked.Increment(ref _analysisGeneration);
     }
 
     private void OnStopped(long generation, StoppedEventArgs e)
@@ -170,10 +206,12 @@ public sealed class AudioEngine : IDisposable
         _reader?.Dispose();
         _output = null;
         _volumeProvider = null;
+        _tap = null;
         _stoppedHandler = null;
         _reader = null;
         _path = null;
         _ring.Reset();
+        ResetAnalysisTransport();
     }
 
     public void Dispose() => Close();

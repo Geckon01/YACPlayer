@@ -95,7 +95,7 @@ Options:
 Keys: Space pause/resume; X stop; N/P next/previous; arrows seek/select;
       +/- volume; M mute; F browser; Tab focus; Enter play/open; A append;
       Delete remove from queue (never disk); / search; S shuffle; R repeat;
-      V visual mode; ? help; Q quit.
+      V visual mode; B realtime audio analysis; ? help; Q quit.
 
 Playback: WAV PCM and MP3. M4A/AAC/WMA/FLAC depend on Windows Media Foundation codecs.
 OGG/Opus playback is not supported by the current release.

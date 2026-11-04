@@ -27,10 +27,11 @@
 - NAudio 3.3.0, `AudioFileReader`, WASAPI shared, запрошенная задержка 100 мс.
 - Самописный ANSI/VT-интерфейс без GUI-фреймворка.
 - Цветной FFT-спектр, realtime PCM waveform и режим Off; PCM для визуализации снимается до выходной громкости/mute.
+- Опциональный realtime-анализ: отдельно отключаемый pre-volume PCM tap питает расчёты RMS/peak/crest, zero-crossing, spectral centroid/dominant frequency, beat pulse и эвристических BPM/confidence в UI-потоке. `B` отключает и панель, и весь этот путь анализа.
 - ATL 7.19.0 лениво загружает метаданные только текущего трека.
 - Настройки: `%LOCALAPPDATA%\Yacplayer\settings.json`.
 - Есть framework-dependent win-x64 publish, win-x64 Native AOT, Inno Setup 6 и self-contained x64 MSIX для Microsoft Store.
-- 23 xUnit-теста без реального аудиоустройства.
+- 26 xUnit-тестов без реального аудиоустройства.
 - MIT; в документации есть уведомление об AI-assisted/generated code.
 - Публичные документы ведутся сначала на английском и имеют русские версии.
 
@@ -78,6 +79,7 @@
 - Спектр использует `█`, плавный ANSI true-color градиент зелёный/жёлтый/красный по высоте и жёлтый верхний маркер.
 - `V`: Spectrum → Waveform → Off. При смене режима backlog очищается; FFT не считается в Waveform/Off.
 - Waveform рисуется зелёными `.` по min/max envelope. Точка — актуальное намеренное решение дизайна.
+- `B` переключает сохраняемую панель Realtime Audio в достаточно широком layout. В выключенном состоянии вторичный tap не пишет данные, а анализатор уровней, спектра и темпа не вызывается.
 
 ### Метаданные и настройки
 
@@ -85,7 +87,7 @@
 - ATL загружает только текущий элемент. Результат передаётся через concurrent queue и применяется UI-loop.
 - Валидация ограничивает volume, FPS 30/60, FFT 2048/4096, enum и существование last directory.
 - Повреждённый JSON переносится в `.bad`; сохранение идёт через `.tmp`.
-- Модель содержит volume, mute, visualizer, repeat, shuffle, recursive, FFT, FPS и last directory.
+- Модель содержит volume, mute, visualizer, realtime analysis, repeat, shuffle, recursive, FFT, FPS и last directory.
 
 ### Упаковка
 
@@ -102,7 +104,8 @@
 Program / CLI
     -> App async UI loop
         -> AudioEngine -> AudioFileReader -> PcmTapSampleProvider
-            -> SampleRingBuffer -> SpectrumAnalyzer / waveform
+            -> visualization SampleRingBuffer -> SpectrumAnalyzer / waveform
+            -> gated analysis SampleRingBuffer -> RealtimeAudioAnalyzer
             -> VolumeSampleProvider -> WasapiPlayer -> Windows output
             -> bounded AudioEventQueue -> UI-owned EOF/error handling
         -> MetadataService -> ConcurrentQueue -> UI-owned TrackEntry
@@ -122,7 +125,8 @@ Program / CLI
 
 - Одновременно не более одной пары decoder/output.
 - Audio callback не выполняет FFT, terminal, metadata, JSON/file I/O, logging, blocking wait или неограниченные allocation.
-- Sample transport ограничен и не блокирует playback.
+- Sample transport для визуализации и анализа ограничен и не блокирует playback.
+- Отключение realtime-анализа прекращает callback-side запись в его ring и все вычисления в UI-потоке, а не только скрывает панель.
 - Playlist/browser принадлежат UI-loop; audio callbacks могут публиковать события, но не меняют playlist/audio state.
 - Queue removal не удаляет файлы.
 - Пользовательский текст проходит через `ScreenBuffer.Write`, без raw ANSI.
@@ -140,7 +144,7 @@ Program / CLI
 | `src/Yacplayer/Configuration/` | Settings и JSON storage |
 | `src/Yacplayer/Library/` | Playlist, browser, track model, metadata |
 | `src/Yacplayer/Audio/` | NAudio/WASAPI, PCM tap, snapshot, ring |
-| `src/Yacplayer/Dsp/` | Hann FFT и logarithmic bands |
+| `src/Yacplayer/Dsp/` | Spectrum FFT/bands и realtime-анализ уровней, спектра, beat и tempo |
 | `src/Yacplayer/Terminal/` | Alternate screen и differential renderer |
 | `tests/Yacplayer.Tests/` | Device-independent xUnit tests |
 | `.github/workflows/tests.yml` | Windows Release build и тесты для push и pull request |
@@ -221,6 +225,7 @@ Installer собирается после обновления `artifacts/publis
 - Перейти к monotonic frame deadline и снижать idle rate.
 - Добавить input/layout snapshots, ring stress, generated-WAV integration, optional WASAPI, installer и soak tests.
 - Добавить bitrate только при явной поддержке, сохранив lazy current-track policy.
+- Считать realtime BPM эвристической оценкой: ей нужно несколько секунд, возможен половинный/двойной темп; до использования для синхронизации нужны улучшенные onset filtering и multi-hypothesis tracking.
 - Отдельными style-only правками отформатировать плотный однострочный код в оставшихся domain-классах и тестах.
 
 ## Платформы
@@ -257,6 +262,7 @@ Installer собирается после обновления `artifacts/publis
 
 ## Текущая проверка
 
+- Панель realtime-аудиоанализа добавлена 2026-11-04: `B` переключает сохраняемую третью нижнюю панель с RMS/peak/crest, zero-crossing rate, spectral centroid, dominant frequency, beat pulse и эвристическими BPM/confidence. Отдельный bounded pre-volume ring записывается только во включённом состоянии, а UI-thread analyzer не вызывается после отключения. Добавлены regression-тесты gating tap, synthetic tone/tempo analysis и persistence настройки. `dotnet format Yacplayer.sln whitespace --include src/Yacplayer/App.cs src/Yacplayer/Audio/AudioEngine.cs src/Yacplayer/Audio/PcmTapSampleProvider.cs src/Yacplayer/Cli/Arguments.cs src/Yacplayer/Configuration/PlayerSettings.cs src/Yacplayer/Dsp/RealtimeAudioAnalyzer.cs --no-restore --verify-no-changes` завершился успешно; `dotnet build Yacplayer.sln -c Release` завершился с 0 warnings/0 errors; `dotnet test Yacplayer.sln -c Release --no-build` прошёл 26/26 тестов. Точность BPM на реальном аудио, WASAPI behavior и TUI layout вручную не проверены.
 - Обновление отзывчивости больших папок 2026-11-04: перечисление browser-каталога теперь выполняется как отменяемый background request с generation tag, а результат применяется UI-loop, поэтому открытие папки не блокирует input/rendering. Добавление в очередь использует постоянный case-insensitive set путей и один `Playlist.AddRange`; активный shuffle-cycle получает только новые indices без перестройки bag. `FileBrowser` использует attributes, полученные перечислением, вместо отдельного `Directory.Exists` для каждого элемента. Добавлены regression-тесты shuffle-cycle и cancellation; `dotnet build Yacplayer.sln -c Release` завершился с 0 warnings/0 errors, `dotnet test Yacplayer.sln -c Release --no-build` прошёл 23/23 теста. Ручной TUI smoke с большой/медленной папкой остаётся невыполненным.
 - Исправление ownership воспроизведения и настроек 2026-11-04: сохранённые repeat/shuffle применяются к `Playlist`, неработающие fullscreen-настройка и клавиша `H` удалены, прямые NAudio callbacks EOF/error заменены bounded `AudioEventQueue` с generation tag, которую читает UI-loop. Добавлены regression-тесты идемпотентного восстановления shuffle, переполнения bounded queue и удаления устаревшей строки help. `dotnet build Yacplayer.sln -c Release` завершился с 0 warnings/0 errors, `dotnet test Yacplayer.sln -c Release --no-build` прошёл 21/21 тест. Ручной WASAPI smoke естественного EOF/error и TUI остаётся невыполненным.
 - Обновление FAQ в README 2026-11-04: раздел диагностики в обеих языковых версиях переименован в FAQ, существующие пункты преобразованы в формат вопрос–ответ и добавлено объяснение Windows-only target и работ, необходимых для реальной поддержки Linux/macOS. Относительные ссылки документации и Markdown-разметка проверены без пересборки кода.

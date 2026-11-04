@@ -14,6 +14,7 @@ public sealed class App(Arguments arguments)
     private readonly Playlist _playlist = new();
     private readonly HashSet<string> _queuedPaths = new(StringComparer.OrdinalIgnoreCase);
     private readonly SampleRingBuffer _ring = new(32768);
+    private readonly SampleRingBuffer _analysisRing = new(65536);
     private readonly SettingsStore _store = new();
     private PlayerSettings _settings = new();
     private string _message = "Ready";
@@ -50,10 +51,12 @@ public sealed class App(Arguments arguments)
         _browserVisible = arguments.Path is null;
 
         var audioEvents = new AudioEventQueue();
-        using var audio = new AudioEngine(_ring, audioEvents);
+        using var audio = new AudioEngine(_ring, audioEvents, _analysisRing);
         var analyzer = new SpectrumAnalyzer(_ring, _settings.FftSize);
+        var realtimeAnalyzer = new RealtimeAudioAnalyzer(_analysisRing);
         audio.SetVolume(_settings.Volume);
         if (_settings.Muted) audio.ToggleMute();
+        audio.SetRealtimeAnalysis(_settings.RealtimeAnalysisEnabled);
         if (File.Exists(start) && _playlist.Items.Count > 0) { _playlist.Play(0); audio.Open(start); }
         if (Console.IsOutputRedirected || Console.IsInputRedirected) { Console.WriteLine($"Yacplayer: {_playlist.Items.Count} track(s) loaded. Interactive TUI requires a terminal."); return 0; }
         if (_browserVisible) StartBrowserLoad(_browserPath, ct);
@@ -65,6 +68,8 @@ public sealed class App(Arguments arguments)
         var waveform = new float[4096];
         var waveformCount = 0;
         var activeVisualizerMode = _settings.VisualizerMode;
+        var analysisGeneration = audio.AnalysisGeneration;
+        var realtimeAudio = RealtimeAudioSnapshot.Empty;
         while (!ct.IsCancellationRequested)
         {
             ProcessAudioEvents(audio, audioEvents);
@@ -75,6 +80,26 @@ public sealed class App(Arguments arguments)
             EnsureCurrentMetadata(ct);
             ApplyMetadataCompletions();
             var snapshot = audio.Snapshot;
+            if (analysisGeneration != audio.AnalysisGeneration)
+            {
+                analysisGeneration = audio.AnalysisGeneration;
+                realtimeAnalyzer.Reset();
+                realtimeAudio = RealtimeAudioSnapshot.Empty;
+            }
+
+            if (_settings.RealtimeAnalysisEnabled && snapshot.State == PlaybackState.Playing)
+            {
+                realtimeAudio = realtimeAnalyzer.Analyze(snapshot.SampleRate);
+            }
+            else if (!_settings.RealtimeAnalysisEnabled)
+            {
+                realtimeAudio = RealtimeAudioSnapshot.Empty;
+            }
+            else
+            {
+                realtimeAudio = realtimeAudio with { BeatDetected = false };
+            }
+
             if (activeVisualizerMode != _settings.VisualizerMode)
             {
                 activeVisualizerMode = _settings.VisualizerMode;
@@ -95,7 +120,7 @@ public sealed class App(Arguments arguments)
             }
             else if (_settings.VisualizerMode == VisualizerMode.Waveform) waveformCount = _ring.ReadLatest(waveform);
             else waveformCount = 0;
-            var screen = Draw(width, height, snapshot, bands, waveform, waveformCount);
+            var screen = Draw(width, height, snapshot, bands, waveform, waveformCount, realtimeAudio);
             terminal.Render(screen.Diff(previous)); previous = screen;
             try { await Task.Delay(1000 / _settings.Fps, ct); } catch (OperationCanceledException) { break; }
         }
@@ -161,6 +186,11 @@ public sealed class App(Arguments arguments)
             case ConsoleKey.S: _playlist.ToggleShuffle(); _message = $"Shuffle {(_playlist.Shuffle ? "on" : "off")}"; break;
             case ConsoleKey.R: _playlist.SetRepeat((RepeatMode)(((int)_playlist.Repeat + 1) % 3)); _message = $"Repeat {_playlist.Repeat}"; break;
             case ConsoleKey.V: _settings.VisualizerMode = (VisualizerMode)(((int)_settings.VisualizerMode + 1) % 3); break;
+            case ConsoleKey.B:
+                _settings.RealtimeAnalysisEnabled = !_settings.RealtimeAnalysisEnabled;
+                audio.SetRealtimeAnalysis(_settings.RealtimeAnalysisEnabled);
+                _message = $"Realtime audio analysis {(_settings.RealtimeAnalysisEnabled ? "on" : "off")}";
+                break;
             case ConsoleKey.F:
                 _browserVisible = true;
                 if (_browserAtDrives) ShowDrives();
@@ -350,7 +380,14 @@ public sealed class App(Arguments arguments)
         return _playlist.Items.Count - 1;
     }
 
-    private ScreenBuffer Draw(int width, int height, PlaybackSnapshot playback, float[] bands, float[] waveform, int waveformCount)
+    private ScreenBuffer Draw(
+        int width,
+        int height,
+        PlaybackSnapshot playback,
+        float[] bands,
+        float[] waveform,
+        int waveformCount,
+        RealtimeAudioSnapshot realtimeAudio)
     {
         var screen = new ScreenBuffer(width, height);
         DrawBox(screen, 0, 0, width - 1, 2, " Yacplayer ", CellColor.Green);
@@ -405,30 +442,102 @@ public sealed class App(Arguments arguments)
             else if (_settings.VisualizerMode == VisualizerMode.Waveform) screen.Write(Math.Max(2, queueLeft - 31), 11, $"Realtime PCM | {playback.SampleRate:N0} Hz", CellColor.Cyan);
             DrawVisualizer(screen, 1, 12, queueLeft - 2, Math.Max(1, infoTop - 12), bands, waveform, waveformCount);
 
-            var middle = queueLeft / 2;
-            DrawBox(screen, 0, infoTop, middle - 1, height - 2, " Playback ", CellColor.Green);
-            screen.Write(3, infoTop + 2, $"Volume   : {playback.Volume}% {new string('█', Math.Clamp(playback.Volume / 10, 0, 10))}", CellColor.Green);
-            screen.Write(3, infoTop + 3, $"Repeat   : {_playlist.Repeat}");
-            screen.Write(3, infoTop + 4, $"Shuffle  : {(_playlist.Shuffle ? "On" : "Off")}");
-            screen.Write(3, infoTop + 5, $"Output   : WASAPI shared");
-            DrawBox(screen, middle, infoTop, queueLeft - 1, height - 2, " Audio Info ", CellColor.Green);
-            screen.Write(middle + 3, infoTop + 2, $"Format      : {Path.GetExtension(playback.Path ?? "").TrimStart('.').ToUpperInvariant()}", CellColor.Green);
-            screen.Write(middle + 3, infoTop + 3, $"Sample rate : {playback.SampleRate:N0} Hz", CellColor.Green);
-            screen.Write(middle + 3, infoTop + 4, $"Channels    : {playback.Channels}", CellColor.Green);
-            screen.Write(middle + 3, infoTop + 5, $"Duration    : {playback.Duration:mm\\:ss}", CellColor.Green);
+            if (_settings.RealtimeAnalysisEnabled && queueLeft >= 105)
+            {
+                var playbackRight = queueLeft / 3;
+                var analysisRight = queueLeft * 2 / 3;
+                DrawPlaybackPanel(screen, 0, playbackRight - 1, infoTop, height - 2, playback);
+                DrawRealtimeAudioPanel(screen, playbackRight, analysisRight - 1, infoTop, height - 2, realtimeAudio);
+                DrawAudioInfoPanel(screen, analysisRight, queueLeft - 1, infoTop, height - 2, playback);
+            }
+            else
+            {
+                var middle = queueLeft / 2;
+                DrawPlaybackPanel(screen, 0, middle - 1, infoTop, height - 2, playback);
+                DrawAudioInfoPanel(screen, middle, queueLeft - 1, infoTop, height - 2, playback);
+            }
         }
 
-        var footer = _help ? "Esc Close help" : "Hotkeys: [Space] Play/Pause | [Left/Right] Seek | [Up/Down] Select | [F] Files | [S] Shuffle | [R] Repeat | [Q] Quit | [?] Help";
+        var footer = _help ? "Esc Close help" : "Hotkeys: [Space] Play/Pause | [Left/Right] Seek | [Up/Down] Select | [F] Files | [S] Shuffle | [R] Repeat | [B] Analysis | [Q] Quit | [?] Help";
         screen.Write(0, height - 1, Fit(footer, width), CellColor.Green, bold: true);
         if (_help)
         {
             for (var y = 2; y < height - 2; y++) screen.Write(2, y, new string(' ', Math.Max(0, width - 4)));
             screen.Write(4, 3, "KEYS: Space pause  X stop  N/P next/prev  Left/Right seek");
             screen.Write(4, 4, "+/- volume  M mute  Enter play  Del remove  S shuffle");
-            screen.Write(4, 5, "R repeat  V visualizer  Q quit  Esc close");
+            screen.Write(4, 5, "R repeat  V visualizer  B realtime analysis  Q quit  Esc close");
         }
         return screen;
     }
+
+    private void DrawPlaybackPanel(
+        ScreenBuffer screen,
+        int left,
+        int right,
+        int top,
+        int bottom,
+        PlaybackSnapshot playback)
+    {
+        DrawBox(screen, left, top, right, bottom, " Playback ", CellColor.Green);
+        var width = Math.Max(1, right - left - 5);
+        screen.Write(left + 3, top + 2, Fit($"Volume   : {playback.Volume}% {new string('█', Math.Clamp(playback.Volume / 10, 0, 10))}", width), CellColor.Green);
+        screen.Write(left + 3, top + 3, Fit($"Repeat   : {_playlist.Repeat}", width));
+        screen.Write(left + 3, top + 4, Fit($"Shuffle  : {(_playlist.Shuffle ? "On" : "Off")}", width));
+        screen.Write(left + 3, top + 5, Fit("Output   : WASAPI shared", width));
+    }
+
+    private static void DrawAudioInfoPanel(
+        ScreenBuffer screen,
+        int left,
+        int right,
+        int top,
+        int bottom,
+        PlaybackSnapshot playback)
+    {
+        DrawBox(screen, left, top, right, bottom, " Audio Info ", CellColor.Green);
+        var width = Math.Max(1, right - left - 5);
+        screen.Write(left + 3, top + 2, Fit($"Format      : {Path.GetExtension(playback.Path ?? "").TrimStart('.').ToUpperInvariant()}", width), CellColor.Green);
+        screen.Write(left + 3, top + 3, Fit($"Sample rate : {playback.SampleRate:N0} Hz", width), CellColor.Green);
+        screen.Write(left + 3, top + 4, Fit($"Channels    : {playback.Channels}", width), CellColor.Green);
+        screen.Write(left + 3, top + 5, Fit($"Duration    : {playback.Duration:mm\\:ss}", width), CellColor.Green);
+    }
+
+    private static void DrawRealtimeAudioPanel(
+        ScreenBuffer screen,
+        int left,
+        int right,
+        int top,
+        int bottom,
+        RealtimeAudioSnapshot audio)
+    {
+        DrawBox(screen, left, top, right, bottom, " Realtime Audio [B] ", CellColor.Green);
+        var width = Math.Max(1, right - left - 5);
+        if (!audio.Available)
+        {
+            screen.Write(left + 3, top + 2, Fit("Waiting for PCM / learning tempo...", width), CellColor.Cyan);
+            return;
+        }
+
+        var bpm = audio.Bpm > 0 ? $"{audio.Bpm,5:0.0}" : "  -- ";
+        var rhythm = audio.Bpm <= 0
+            ? "Learning"
+            : audio.BeatConfidence >= 0.55f
+                ? "Stable"
+                : audio.BeatConfidence >= 0.3f
+                    ? "Detected"
+                    : "Weak";
+        var beat = audio.BeatDetected ? "●" : "·";
+        screen.Write(left + 3, top + 1, Fit($"BPM  : {bpm}  Conf {audio.BeatConfidence:P0}", width), CellColor.Cyan);
+        screen.Write(left + 3, top + 2, Fit($"Beat : {beat}  Rhythm {rhythm}", width), audio.BeatDetected ? CellColor.Yellow : CellColor.Green, bold: audio.BeatDetected);
+        screen.Write(left + 3, top + 3, Fit($"RMS  : {audio.RmsDbfs,6:0.0} dBFS  Peak {audio.PeakDbfs,6:0.0}", width));
+        screen.Write(left + 3, top + 4, Fit($"Crest: {audio.CrestDb,5:0.0} dB    ZCR {audio.ZeroCrossingRate:P1}", width));
+        screen.Write(left + 3, top + 5, Fit($"Centroid : {FormatFrequency(audio.SpectralCentroidHz)}", width), CellColor.Green);
+        screen.Write(left + 3, top + 6, Fit($"Dominant : {FormatFrequency(audio.DominantFrequencyHz)}", width), CellColor.Green);
+    }
+
+    private static string FormatFrequency(float value) => value >= 1000
+        ? $"{value / 1000:0.00} kHz"
+        : $"{value:0} Hz";
 
     private void ProcessAudioEvents(AudioEngine audio, AudioEventQueue events)
     {
