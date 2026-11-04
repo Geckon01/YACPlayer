@@ -7,7 +7,7 @@
   "targets": {
     ".NETCoreApp,Version=v10.0": {},
     ".NETCoreApp,Version=v10.0/win-x64": {
-      "Yacplayer/1.26.3.11": {
+      "Yacplayer/1.26.5.11": {
         "dependencies": {
           "FftFlat": "1.0.1",
           "NAudio": "3.3.0",
@@ -116,7 +116,7 @@
     }
   },
   "libraries": {
-    "Yacplayer/1.26.3.11": {
+    "Yacplayer/1.26.5.11": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
