@@ -231,14 +231,15 @@ artifacts/installer/            compiled installer
 
 Complete engineering documentation: [English](docs/ARCHITECTURE.md) · [Русский](docs/ARCHITECTURE.ru.md).
 
-## Troubleshooting
+## FAQ
 
-- **Blank screen or poor colors:** use Windows Terminal, UTF-8, and a font containing `█`.
-- **No audio:** verify the default output device; Yacplayer requests WASAPI shared mode with 100 ms latency.
-- **A visible file does not play:** appearing in the browser does not guarantee an installed system codec.
-- **Explorer shows an old icon:** Windows may cache executable icons; rename the file or restart Explorer.
-- **Settings do not load:** inspect `settings.json.bad` next to the configuration file.
-- **The terminal remains in alternate screen:** normal `Q` and Ctrl+C paths restore it; after a hard process termination, reset the terminal or open a new tab.
+- **Why is Yacplayer available only for Windows?** The application currently targets `net10.0-windows` and sends audio through NAudio and WASAPI. Linux and macOS require separate, properly tested audio backends, filesystem/configuration integration, codec validation, and terminal behavior checks. Cross-compiling the current Windows host would not produce a working or supported port.
+- **Why is the screen blank or poorly colored?** Use Windows Terminal, UTF-8, and a font containing `█`.
+- **Why is there no audio?** Verify the default output device; Yacplayer requests WASAPI shared mode with 100 ms latency.
+- **Why does a visible file not play?** Appearing in the browser does not guarantee an installed system codec.
+- **Why does Explorer show an old icon?** Windows may cache executable icons; rename the file or restart Explorer.
+- **Why do settings not load?** Inspect `settings.json.bad` next to the configuration file.
+- **Why does the terminal remain in the alternate screen?** Normal `Q` and Ctrl+C paths restore it; after a hard process termination, reset the terminal or open a new tab.
 
 Use `dotnet-counters` and `dotnet-trace` for profiling. Neither is a runtime dependency.
 
