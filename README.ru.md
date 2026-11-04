@@ -174,7 +174,7 @@ dotnet test Yacplayer.sln -c Release
 
 GitHub Actions выполняет ту же последовательность restore, Release-сборки и тестов на Windows для каждого push и pull request.
 
-Текущий набор содержит 26 unit-тестов без требования аудиоустройства: CLI, четырёхкомпонентная assembly version, playlist и восстановление repeat/shuffle, batch insert внутри активного shuffle-cycle, bounded audio-event delivery, прокрутка/clamp list viewport, ring buffer wrapping/latest reads, независимо отключаемый pre-volume PCM tap, realtime level/spectrum/tempo analysis, ANSI/true-color diff styles, batching и обновление Unicode-строк, settings, FFT, metadata fallback и отменяемая browser filtering/sorting.
+Текущий набор содержит 28 unit-тестов без требования аудиоустройства: CLI, четырёхкомпонентная assembly version, playlist и восстановление repeat/shuffle, batch insert внутри активного shuffle-cycle, bounded audio-event delivery, прокрутка/clamp list viewport, ring buffer wrapping/latest reads, независимо отключаемый pre-volume PCM tap, realtime level/spectrum/tempo analysis, вынесенный player/browser renderer, дедупликация в browser controller, ANSI/true-color diff styles, batching и обновление Unicode-строк, settings, FFT, metadata fallback и отменяемая browser filtering/sorting.
 
 Публикация framework-dependent win-x64:
 
@@ -216,10 +216,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File packaging\msix\Build-Msix.ps
 ```text
 src/Yacplayer/                  приложение
   Audio/                       NAudio, WASAPI, PCM tap, ring buffer
+  Application/                 browser, metadata и visualization coordinators
   Cli/                         разбор аргументов и help
   Configuration/               модель и JSON-хранилище настроек
   Dsp/                         FFT и логарифмические полосы
   Library/                     очередь, browser, metadata model/service
+  Presentation/                player/browser terminal layouts
   Terminal/                    alternate screen, cell buffer, ANSI diff
 tests/Yacplayer.Tests/          xUnit-тесты чистой логики
 assets/                         PNG и многоразмерная ICO-иконка

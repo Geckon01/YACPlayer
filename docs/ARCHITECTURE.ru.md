@@ -13,7 +13,7 @@
 1. **Один процесс, один shipping project.** Нет сервисов, IPC, базы данных и plugin host.
 2. **Audio path отделён от UI.** Декодирование и выдача PCM инициируются NAudio/WASAPI; FFT и ANSI-rendering не выполняются внутри audio callback.
 3. **Bounded data flow.** PCM tap пишет в visualization ring и опциональный analysis ring фиксированного размера. При перегрузке старые samples вытесняются, а воспроизведение не ждёт DSP consumer.
-4. **UI управляет состоянием.** `App` содержит event loop, keyboard dispatch, browser state, playlist orchestration, DSP sampling и layout.
+4. **UI-состояние разделено между явными coordinators.** `App` владеет event loop и command routing; `BrowserController`, `CurrentTrackMetadataLoader` и `VisualizationPipeline` владеют своими mutable lifecycle, а `AppRenderer` — только layout.
 5. **Доменная логика тестируема без устройства.** Playlist, ring buffer, FFT, settings, browser filtering и terminal diff не требуют WASAPI.
 6. **Terminal output строится декларативно.** Каждый кадр сначала формируется в `ScreenBuffer`, затем сравнивается с предыдущим и превращается в минимизированный ANSI diff.
 7. **Ошибки окружения не должны повреждать терминал.** `TerminalSession.Dispose` восстанавливает экран, цвета и курсор; Ctrl+C переводится в cancellation.
@@ -23,7 +23,7 @@
 ```mermaid
 flowchart LR
     User["Клавиатура / пользователь"] --> App["App: event loop"]
-    Files["Локальная файловая система"] --> Browser["FileBrowser"]
+    Files["Локальная файловая система"] --> Browser["BrowserController / FileBrowser"]
     Browser --> App
     App --> Playlist["Playlist"]
     App --> Audio["AudioEngine"]
@@ -36,13 +36,15 @@ flowchart LR
     Ring --> Wave["Latest PCM waveform"]
     Tap -->|"gated by B"| AnalysisRing["Analysis ring"]
     AnalysisRing --> Realtime["RealtimeAudioAnalyzer"]
-    FFT --> App
-    Wave --> App
-    Realtime --> App
-    App --> Buffer["ScreenBuffer"]
+    FFT --> Visuals["VisualizationPipeline"]
+    Wave --> Visuals
+    Realtime --> Visuals
+    Visuals --> App
+    App --> Renderer["AppRenderer"]
+    Renderer --> Buffer["ScreenBuffer"]
     Buffer --> Terminal["ANSI/VT terminal"]
     Settings["settings.json"] <--> App
-    ATL["ATL metadata service"] -->|"только текущий трек"| App
+    ATL["CurrentTrackMetadataLoader / ATL"] -->|"только текущий трек"| App
 ```
 
 Runtime NuGet dependencies:
@@ -62,7 +64,11 @@ Test-only dependencies: xUnit, Microsoft.NET.Test.Sdk, coverlet collector, xUnit
 | Путь | Ответственность |
 |---|---|
 | `Program.cs` | Process entry point, UTF-8, CLI, exit codes, Ctrl+C, global startup error boundary |
-| `App.cs` | Composition root и UI/application controller |
+| `App.cs` | Composition root, event loop, command routing и shutdown/settings orchestration |
+| `Application/BrowserController.cs` | Browser navigation/load lifecycle, path deduplication и batch queue insertion |
+| `Application/CurrentTrackMetadataLoader.cs` | Cancellation/completion ownership metadata текущего трека |
+| `Application/VisualizationPipeline.cs` | Координация spectrum/waveform/realtime analysis и reset rules |
+| `Presentation/AppRenderer.cs` | Player/browser layouts, viewports и композиция `ScreenBuffer` |
 | `Cli/Arguments.cs` | Ручной детерминированный parser CLI и статический help text |
 | `Configuration/` | Persisted settings и атомарное JSON-хранилище |
 | `Library/Playlist.cs` | Queue navigation, selection, repeat, shuffle bag/history |
@@ -141,21 +147,24 @@ sequenceDiagram
 
 ## 6. Application controller и event loop
 
-`App` — текущий composition root и одновременно controller представления. Отдельного DI-container нет.
+`App` — composition root и coordinator event loop/команд. Отдельного DI-container нет. Он создаёт audio engine и четыре специализированных компонента:
+
+- `BrowserController` владеет навигацией, cancellable generation-tagged loads, дедупликацией и queue batches;
+- `CurrentTrackMetadataLoader` владеет cancellation/completion lifecycle текущего трека;
+- `VisualizationPipeline` владеет обоими sample rings, smoothing spectrum, чтением waveform и reset realtime-анализа;
+- `AppRenderer` владеет list viewports и всей композицией player/browser layout, но не выполняет playback, filesystem или settings commands.
 
 Главный цикл на каждом кадре:
 
-1. Применяет generation-checked audio/browser completions к UI-owned state.
+1. Передаёт coordinators обработку generation-checked audio/browser/metadata completions в UI-owned state.
 2. Пока `Console.KeyAvailable`, синхронно/асинхронно обрабатывает доступные клавиши.
 3. Безопасно читает `Console.WindowWidth/Height`; исключение разрывает loop.
 4. Получает `PlaybackSnapshot` из `AudioEngine`.
-5. Выполняет только активный путь визуализации: FFT со сглаживанием для `Spectrum`, чтение последних samples для `Waveform`, отсутствие DSP-чтения для `Off`.
-6. Если realtime analysis включён и playback активен, читает отдельный ring и обновляет level, spectral, beat и tempo estimates; в выключенном состоянии не выполняются ни этот шаг, ни callback-side ring writes.
-7. При смене режима или generation сбрасывает накопленные данные визуализации/анализа.
-8. Создаёт новый `ScreenBuffer` текущего размера.
-9. Строит browser layout либо player layout.
-10. Вычисляет ANSI diff относительно прошлого кадра и пишет его в terminal.
-11. Делает `Task.Delay(1000 / FPS, token)`.
+5. Просит `VisualizationPipeline` выполнить только активный visualizer и включённый realtime analysis и применить reset rules.
+6. Упаковывает текущие references/snapshots в `AppRenderState`.
+7. Просит `AppRenderer` создать `ScreenBuffer` и построить browser либо player layout.
+8. Вычисляет ANSI diff относительно прошлого кадра и пишет его в terminal.
+9. Делает `Task.Delay(1000 / FPS, token)`.
 
 Цикл не busy-spins. Фактический FPS является верхней границей: время обработки и rendering прибавляется к delay.
 
@@ -219,14 +228,14 @@ Allowlist: `.wav`, `.mp3`, `.m4a`, `.aac`, `.wma`, `.flac`.
 
 ### 9.2 Navigation state
 
-`App` хранит browser path, entries, selected index, `ListViewport` и признак виртуального уровня дисков. Новая навигация отменяет предыдущую загрузку, очищает старые entries и немедленно возвращает управление frame loop. Worker публикует completion с generation tag; UI-loop игнорирует устаревшие generation и единолично заменяет browser state. Index `0` всегда зарезервирован:
+`BrowserController` хранит browser path, entries, selected index, queued-path deduplication и признак виртуального уровня дисков. Новая навигация отменяет предыдущую загрузку, очищает старые entries и немедленно возвращает управление frame loop. Worker публикует completion с generation tag; `App` просит controller применить его в UI-loop, где устаревшие generation игнорируются. Index `0` всегда зарезервирован:
 
 - обычный каталог: `[..]`;
 - виртуальный root: `[This PC]`.
 
 `Backspace` и `Enter` на `[..]` вызывают одинаковый переход. Выше drive root строится список `DriveInfo.GetDrives().Where(IsReady)`.
 
-File list, основная queue и вспомогательная queue в browser имеют независимые `ListViewport`. Viewport удерживает target index видимым с запасом в одну строку, clamp-ит offset после изменения коллекции/высоты окна и не переставляет элементы исходной коллекции. Основная queue следует за `SelectedIndex` (playback также синхронизирует его с `CurrentIndex`), информационная queue в browser следует за `CurrentIndex`, когда он задан.
+`AppRenderer` владеет независимыми `ListViewport` для file list, основной queue и вспомогательной queue в browser. Каждый viewport удерживает target index видимым с запасом в одну строку, clamp-ит offset после изменения коллекции/высоты окна и не переставляет элементы исходной коллекции. Основная queue следует за `SelectedIndex` (playback также синхронизирует его с `CurrentIndex`), информационная queue в browser следует за `CurrentIndex`, когда он задан.
 
 ### 9.3 Recursive scan
 
@@ -550,7 +559,9 @@ Inno Setup:
 3. Перевести ring implementation на чётко доказанный SPSC algorithm и добавить длительный concurrent stress test.
 4. Добавить integration WAV fixture, manual/optional WASAPI smoke test и terminal snapshot tests.
 5. Рассмотреть self-contained installer или автоматический bootstrap runtime вместо блокирующей prerequisite check.
-6. Разделить крупный `App` на controller/input/layout components по мере роста функций.
+6. Переиспользовать два screen buffer и pooled ANSI output, чтобы уменьшить per-frame GC pressure.
+7. Не потреблять неполные FFT windows и пропускать spectrum analysis при inactive playback.
+8. Пакетно выполнять multichannel downmix/ring writes и сделать recursive scans incremental/cancellable.
 
 ## 24. Точки расширения
 

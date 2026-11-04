@@ -31,7 +31,7 @@
 - ATL 7.19.0 лениво загружает метаданные только текущего трека.
 - Настройки: `%LOCALAPPDATA%\Yacplayer\settings.json`.
 - Есть framework-dependent win-x64 publish, win-x64 Native AOT, Inno Setup 6 и self-contained x64 MSIX для Microsoft Store.
-- 26 xUnit-тестов без реального аудиоустройства.
+- 28 xUnit-тестов без реального аудиоустройства.
 - MIT; в документации есть уведомление об AI-assisted/generated code.
 - Публичные документы ведутся сначала на английском и имеют русские версии.
 
@@ -102,15 +102,16 @@
 
 ```text
 Program / CLI
-    -> App async UI loop
+    -> App async UI loop (composition, input routing, playlist orchestration)
+        -> BrowserController -> FileBrowser worker -> UI-owned browser state
+        -> CurrentTrackMetadataLoader -> MetadataService -> UI-owned TrackEntry
+        -> VisualizationPipeline
         -> AudioEngine -> AudioFileReader -> PcmTapSampleProvider
             -> visualization SampleRingBuffer -> SpectrumAnalyzer / waveform
             -> gated analysis SampleRingBuffer -> RealtimeAudioAnalyzer
             -> VolumeSampleProvider -> WasapiPlayer -> Windows output
             -> bounded AudioEventQueue -> UI-owned EOF/error handling
-        -> MetadataService -> ConcurrentQueue -> UI-owned TrackEntry
-        -> FileBrowser worker -> ConcurrentQueue -> UI-owned browser state
-        -> ScreenBuffer -> ANSI diff -> TerminalSession
+        -> AppRenderer -> ScreenBuffer -> ANSI diff -> TerminalSession
         <-> SettingsStore -> settings.json
 ```
 
@@ -139,7 +140,9 @@ Program / CLI
 | Путь | Назначение |
 |---|---|
 | `src/Yacplayer/Program.cs` | Entry point, CLI, cancellation, top-level errors |
-| `src/Yacplayer/App.cs` | Composition root, loop, input, browser, orchestration, layout |
+| `src/Yacplayer/App.cs` | Composition root, loop, input routing и shutdown/settings orchestration |
+| `src/Yacplayer/Application/` | Browser controller, lifecycle metadata текущего трека и visualization pipeline |
+| `src/Yacplayer/Presentation/` | Player/browser layouts и terminal rendering |
 | `src/Yacplayer/Cli/` | Parser и help |
 | `src/Yacplayer/Configuration/` | Settings и JSON storage |
 | `src/Yacplayer/Library/` | Playlist, browser, track model, metadata |
@@ -220,7 +223,6 @@ Installer собирается после обновления `artifacts/publis
 - Убрать из help неработающие `Tab` и `/ search` либо реализовать их.
 - Отличать inaccessible directory от empty.
 - Учитывать grapheme/display width.
-- Разделить перегруженный `App` на state/commands, services и view/layout.
 - Не считать spectrum при inactive playback и кешировать band/bin mapping.
 - Перейти к monotonic frame deadline и снижать idle rate.
 - Добавить input/layout snapshots, ring stress, generated-WAV integration, optional WASAPI, installer и soak tests.
@@ -262,6 +264,7 @@ Installer собирается после обновления `artifacts/publis
 
 ## Текущая проверка
 
+- Декомпозиция `App` выполнена 2026-11-04: `App.cs` уменьшен с 727 до 418 строк и оставлен composition root, event loop и command router. Browser loading/navigation/deduplication перенесены в `BrowserController`; cancellation/completions metadata текущего трека — в `CurrentTrackMetadataLoader`; координация visualizer/realtime DSP — в `VisualizationPipeline`; все player/browser layouts и viewports — в `AppRenderer`. Для тестов открыт internal boundary и добавлены regression-тесты renderer layouts и browser deduplication. К изменённым source/test files применён `dotnet format Yacplayer.sln whitespace`, `dotnet build Yacplayer.sln -c Release --no-restore` завершился с 0 warnings/0 errors, `dotnet test Yacplayer.sln -c Release --no-build` прошёл 28/28 тестов. Ручной TUI/WASAPI smoke остаётся невыполненным.
 - Панель realtime-аудиоанализа добавлена 2026-11-04: `B` переключает сохраняемую третью нижнюю панель с RMS/peak/crest, zero-crossing rate, spectral centroid, dominant frequency, beat pulse и эвристическими BPM/confidence. Отдельный bounded pre-volume ring записывается только во включённом состоянии, а UI-thread analyzer не вызывается после отключения. Добавлены regression-тесты gating tap, synthetic tone/tempo analysis и persistence настройки. `dotnet format Yacplayer.sln whitespace --include src/Yacplayer/App.cs src/Yacplayer/Audio/AudioEngine.cs src/Yacplayer/Audio/PcmTapSampleProvider.cs src/Yacplayer/Cli/Arguments.cs src/Yacplayer/Configuration/PlayerSettings.cs src/Yacplayer/Dsp/RealtimeAudioAnalyzer.cs --no-restore --verify-no-changes` завершился успешно; `dotnet build Yacplayer.sln -c Release` завершился с 0 warnings/0 errors; `dotnet test Yacplayer.sln -c Release --no-build` прошёл 26/26 тестов. Точность BPM на реальном аудио, WASAPI behavior и TUI layout вручную не проверены.
 - Обновление отзывчивости больших папок 2026-11-04: перечисление browser-каталога теперь выполняется как отменяемый background request с generation tag, а результат применяется UI-loop, поэтому открытие папки не блокирует input/rendering. Добавление в очередь использует постоянный case-insensitive set путей и один `Playlist.AddRange`; активный shuffle-cycle получает только новые indices без перестройки bag. `FileBrowser` использует attributes, полученные перечислением, вместо отдельного `Directory.Exists` для каждого элемента. Добавлены regression-тесты shuffle-cycle и cancellation; `dotnet build Yacplayer.sln -c Release` завершился с 0 warnings/0 errors, `dotnet test Yacplayer.sln -c Release --no-build` прошёл 23/23 теста. Ручной TUI smoke с большой/медленной папкой остаётся невыполненным.
 - Исправление ownership воспроизведения и настроек 2026-11-04: сохранённые repeat/shuffle применяются к `Playlist`, неработающие fullscreen-настройка и клавиша `H` удалены, прямые NAudio callbacks EOF/error заменены bounded `AudioEventQueue` с generation tag, которую читает UI-loop. Добавлены regression-тесты идемпотентного восстановления shuffle, переполнения bounded queue и удаления устаревшей строки help. `dotnet build Yacplayer.sln -c Release` завершился с 0 warnings/0 errors, `dotnet test Yacplayer.sln -c Release --no-build` прошёл 21/21 тест. Ручной WASAPI smoke естественного EOF/error и TUI остаётся невыполненным.

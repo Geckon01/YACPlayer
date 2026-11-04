@@ -13,7 +13,7 @@ The target is Windows x64, `.NET 10`, and `net10.0-windows`. The application shi
 1. **One process and one shipping project.** There are no services, IPC endpoints, databases, or plugin hosts.
 2. **Audio is isolated from presentation work.** NAudio/WASAPI requests decoded PCM; FFT, metadata, JSON, and terminal rendering do not execute in the audio callback.
 3. **Bounded sample transport.** The PCM tap writes to fixed-size visualization and optional analysis rings. Under overload, stale samples are discarded instead of blocking playback.
-4. **UI-owned application state.** `App` currently owns the event loop, keyboard routing, browser state, playlist orchestration, DSP sampling, and layout.
+4. **UI-owned application state with explicit coordinators.** `App` owns the event loop and command routing; `BrowserController`, `CurrentTrackMetadataLoader`, and `VisualizationPipeline` own their respective mutable lifecycles, while `AppRenderer` owns layout only.
 5. **Device-independent domain tests.** Playlist, ring, FFT, settings, browser filtering, and terminal diff logic can run without WASAPI hardware.
 6. **Declarative terminal frames.** A complete `ScreenBuffer` is built first and compared with the preceding frame to produce an ANSI diff.
 7. **Deterministic terminal restoration.** `TerminalSession.Dispose` restores colors, the cursor, and the primary screen; Ctrl+C becomes cooperative cancellation.
@@ -23,7 +23,7 @@ The target is Windows x64, `.NET 10`, and `net10.0-windows`. The application shi
 ```mermaid
 flowchart LR
     User["Keyboard / user"] --> App["App event loop"]
-    FS["Local filesystem"] --> Browser["FileBrowser"]
+    FS["Local filesystem"] --> Browser["BrowserController / FileBrowser"]
     Browser --> App
     App --> Playlist["Playlist"]
     App --> Audio["AudioEngine"]
@@ -36,13 +36,15 @@ flowchart LR
     Ring --> Wave["Latest PCM waveform"]
     Tap -->|"gated by B"| AnalysisRing["Analysis ring"]
     AnalysisRing --> Realtime["RealtimeAudioAnalyzer"]
-    FFT --> App
-    Wave --> App
-    Realtime --> App
-    App --> Screen["ScreenBuffer"]
+    FFT --> Visuals["VisualizationPipeline"]
+    Wave --> Visuals
+    Realtime --> Visuals
+    Visuals --> App
+    App --> Renderer["AppRenderer"]
+    Renderer --> Screen["ScreenBuffer"]
     Screen --> Terminal["ANSI/VT terminal"]
     Settings["settings.json"] <--> App
-    ATL["ATL metadata service"] -->|"current track only"| App
+    ATL["CurrentTrackMetadataLoader / ATL"] -->|"current track only"| App
 ```
 
 ### Runtime dependencies
@@ -62,7 +64,11 @@ xUnit, Microsoft.NET.Test.Sdk, coverlet, and the VS xUnit runner are test-only d
 | Path | Responsibility |
 |---|---|
 | `Program.cs` | Process entry, UTF-8, CLI boundary, exit codes, Ctrl+C, top-level exception handling |
-| `App.cs` | Composition root and application/UI controller |
+| `App.cs` | Composition root, event loop, command routing, and shutdown/settings orchestration |
+| `Application/BrowserController.cs` | Browser navigation/load lifecycle, path deduplication, and batch queue insertion |
+| `Application/CurrentTrackMetadataLoader.cs` | Cancellation and completion ownership for current-track metadata |
+| `Application/VisualizationPipeline.cs` | Spectrum/waveform/realtime-analysis coordination and reset rules |
+| `Presentation/AppRenderer.cs` | Player/browser layouts, viewports, and `ScreenBuffer` composition |
 | `Cli/Arguments.cs` | Deterministic command-line parser and help text |
 | `Configuration/` | Persisted settings and atomic JSON storage |
 | `Library/Playlist.cs` | Queue selection, navigation, repeat, shuffle bag/history |
@@ -133,21 +139,24 @@ sequenceDiagram
 
 ## 6. Application event loop
 
-`App` is both the composition root and the current presentation controller; no DI container is used.
+`App` is the composition root and command/event-loop coordinator; no DI container is used. It creates the audio engine and the following focused components:
+
+- `BrowserController` owns browser navigation, cancellable generation-tagged loads, deduplication, and queue batches;
+- `CurrentTrackMetadataLoader` owns the current-track cancellation/completion lifecycle;
+- `VisualizationPipeline` owns both sample rings, visualizer smoothing, waveform reads, and realtime-analysis resets;
+- `AppRenderer` owns list viewports and all player/browser layout composition, but does not issue playback, filesystem, or settings commands.
 
 Each frame:
 
-1. Drains generation-checked audio and browser completions into UI-owned state.
+1. Lets the audio/browser/metadata coordinators drain generation-checked completions into UI-owned state.
 2. Processes all currently available keys with `Console.KeyAvailable`.
 3. Reads terminal width and height inside an exception boundary.
-4. obtains a `PlaybackSnapshot`;
-5. runs only the active visualizer path: FFT plus smoothing for `Spectrum`, a latest-sample read for `Waveform`, and no DSP read for `Off`;
-6. when realtime analysis is enabled and playback is active, consumes its separate ring and updates level, spectral, beat, and tempo estimates; when disabled, neither this step nor its callback-side ring write runs;
-7. resets pending visualization or analysis data when its mode/generation changes;
-8. creates a `ScreenBuffer` matching the current terminal size;
-9. builds either browser or player layout;
-10. diffs the frame against the previous one and writes ANSI output;
-11. waits `1000 / FPS` milliseconds with cancellation.
+4. Obtains a `PlaybackSnapshot`;
+5. asks `VisualizationPipeline` to run only the active visualizer and enabled realtime-analysis paths and apply reset rules;
+6. packages the current references/snapshots into `AppRenderState`;
+7. asks `AppRenderer` to create a `ScreenBuffer` and build either browser or player layout;
+8. diffs the frame against the previous one and writes ANSI output;
+9. waits `1000 / FPS` milliseconds with cancellation.
 
 The loop does not busy-spin. The requested FPS is an upper bound because frame work is added before the fixed delay.
 
@@ -200,9 +209,9 @@ Allowlist: `.wav`, `.mp3`, `.m4a`, `.aac`, `.wma`, `.flac`.
 
 ### Navigation
 
-`App` stores path, entries, selected index, a `ListViewport`, and a virtual-drive-level flag. Starting navigation cancels the previous load, clears the old entries, and returns immediately to the frame loop. The worker posts a generation-tagged completion; the UI loop ignores stale generations and alone replaces browser state. Index `0` is reserved for `[..]` in normal directories and `[This PC]` at the virtual root. `Backspace` and `Enter` on `[..]` share the same parent transition. Above a drive root, ready drives from `DriveInfo.GetDrives()` are displayed.
+`BrowserController` stores path, entries, selected index, queued-path deduplication, and the virtual-drive-level flag. Starting navigation cancels the previous load, clears the old entries, and returns immediately to the frame loop. The worker posts a generation-tagged completion; `App` asks the controller to drain it on the UI loop, where stale generations are ignored. Index `0` is reserved for `[..]` in normal directories and `[This PC]` at the virtual root. `Backspace` and `Enter` on `[..]` share the same parent transition. Above a drive root, ready drives from `DriveInfo.GetDrives()` are displayed.
 
-The file list, main queue, and browser-side queue each own an independent `ListViewport`. It keeps a target index visible with a one-row margin, clamps its offset after collection/window-size changes, and never reorders the underlying collection. The main queue follows `SelectedIndex` (which playback also synchronizes to `CurrentIndex`); the browser-side informational queue follows `CurrentIndex` when available.
+`AppRenderer` owns independent `ListViewport` instances for the file list, main queue, and browser-side queue. Each keeps a target index visible with a one-row margin, clamps its offset after collection/window-size changes, and never reorders the underlying collection. The main queue follows `SelectedIndex` (which playback also synchronizes to `CurrentIndex`); the browser-side informational queue follows `CurrentIndex` when available.
 
 ### Recursive scan
 
@@ -454,10 +463,9 @@ Priority gaps:
 3. Replace the ring with a clearly proven SPSC implementation and add sustained concurrency tests.
 4. Add generated-WAV integration, optional WASAPI smoke, and terminal snapshot tests.
 5. Consider a self-contained installer or runtime bootstrapper.
-6. Split the growing `App` controller into input, application state, and layout components.
-7. Reuse two screen buffers and pooled ANSI output to reduce per-frame GC pressure.
-8. Avoid consuming partial FFT windows; skip spectrum analysis while playback is inactive.
-9. Batch multichannel downmix/ring writes and make recursive scans incremental and cancellable.
+6. Reuse two screen buffers and pooled ANSI output to reduce per-frame GC pressure.
+7. Avoid consuming partial FFT windows; skip spectrum analysis while playback is inactive.
+8. Batch multichannel downmix/ring writes and make recursive scans incremental and cancellable.
 
 ## 24. Extension points
 

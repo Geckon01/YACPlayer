@@ -83,7 +83,6 @@ Recommended action: define representative scenarios and capture baselines with `
 - **P2 — tempo estimate:** the Realtime Audio panel derives BPM from bounded short-time energy and autocorrelation rather than reading authoritative metadata or running a full beat tracker. It needs several seconds of active playback and can select a half/double tempo for syncopated, changing, or weak rhythms. Keep the UI labelled as an estimate; improve onset filtering and multi-hypothesis tracking before using it for synchronization.
 - **P2 — browser diagnostics:** inaccessible directories and empty directories share the same user-facing result. Preserve and display enumeration errors without crashing.
 - **P2 — Unicode layout:** clipping is based on .NET character positions rather than terminal grapheme/display width. Combining marks, emoji, and East Asian wide characters can still misalign borders and columns. Rows containing likely variable-width Unicode are now erased and fully repainted as a low-cost stale-glyph mitigation, but this is not a complete width-aware layout solution.
-- **P2 — controller size:** `App` owns input routing, browser state, playback orchestration, DSP sampling, persistence, and layout. Split it into application state/reducer, input commands, services, and view/layout code before adding substantially more features.
 - **P3 — format support contract:** the browser extension allowlist and the actual decoder capabilities can diverge. Each advertised format needs decoder verification and an intelligible open-error path.
 - **P3 — terminal compatibility:** ANSI/VT behavior, color depth, resizing, alternate-screen recovery, redirected input/output, and small-window layouts need broader testing outside Windows Terminal.
 
@@ -227,7 +226,6 @@ Delay-based polling добавляет время работы к задержк
 - **P2 — оценка темпа:** панель Realtime Audio получает BPM из ограниченной истории short-time energy и autocorrelation, а не из авторитетных metadata и не через полноценный beat tracker. Ей нужно несколько секунд активного воспроизведения; для синкопированного, меняющегося или слабого ритма возможен половинный/двойной темп. UI должен обозначать значение как оценку; для синхронизации понадобятся улучшенные onset filtering и multi-hypothesis tracking.
 - **P2 — диагностика браузера:** access denied должен отличаться от пустой папки и не приводить к падению.
 - **P2 — Unicode:** расчёт по позициям .NET не учитывает grapheme/display width; combining marks, emoji и wide characters всё ещё могут ломать выравнивание. Строки с вероятным Unicode переменной ширины теперь очищаются и полностью перерисовываются как дешёвая защита от оставшихся символов, но это не заменяет полноценный width-aware layout.
-- **P2 — перегруженный `App`:** input, browser, playback, DSP, persistence и layout следует разделить до значительного расширения функций.
 - **P3 — контракт форматов:** расширения браузера и реальные возможности decoder могут расходиться; каждый заявленный формат требует проверки.
 - **P3 — совместимость терминалов:** нужны тесты ANSI, цвета, resize, восстановления alternate screen, redirected I/O и маленьких окон вне Windows Terminal.
 

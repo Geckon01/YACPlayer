@@ -174,7 +174,7 @@ dotnet test Yacplayer.sln -c Release
 
 GitHub Actions runs the same restore, Release build, and test sequence on Windows for every push and pull request.
 
-The current suite contains 26 device-independent unit tests covering CLI parsing, four-part assembly versioning, playlist behavior and restored repeat/shuffle state, batch insertion during an active shuffle cycle, bounded audio-event delivery, list viewport scrolling/clamping, ring-buffer wrapping/latest reads, independently gated pre-volume PCM tapping, realtime level/spectrum/tempo analysis, ANSI/true-color diff styles, batching and Unicode-row refresh, settings, FFT, metadata fallback, and cancellable browser filtering/sorting.
+The current suite contains 28 device-independent unit tests covering CLI parsing, four-part assembly versioning, playlist behavior and restored repeat/shuffle state, batch insertion during an active shuffle cycle, bounded audio-event delivery, list viewport scrolling/clamping, ring-buffer wrapping/latest reads, independently gated pre-volume PCM tapping, realtime level/spectrum/tempo analysis, extracted player/browser layout rendering, browser-controller deduplication, ANSI/true-color diff styles, batching and Unicode-row refresh, settings, FFT, metadata fallback, and cancellable browser filtering/sorting.
 
 Framework-dependent win-x64 publish:
 
@@ -216,10 +216,12 @@ Output: `artifacts\installer\Yacplayer-1.26.3.11-win-x64-setup.exe`.
 ```text
 src/Yacplayer/                  application
   Audio/                       NAudio, WASAPI, PCM tap, ring buffer
+  Application/                 browser, metadata, and visualization coordinators
   Cli/                         argument parsing and help
   Configuration/               settings model and JSON persistence
   Dsp/                         FFT and logarithmic bands
   Library/                     queue, browser, metadata model/service
+  Presentation/                player/browser terminal layouts
   Terminal/                    alternate screen, cell buffer, ANSI diff
 tests/Yacplayer.Tests/          xUnit tests for device-independent logic
 assets/                         PNG and multi-resolution ICO icon
