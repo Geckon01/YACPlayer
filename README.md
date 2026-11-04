@@ -2,7 +2,7 @@
 
 **Language:** English · [Русский](README.ru.md)
 
-![Yacplayer terminal interface](assets/Yacplayer_screenshot.png)
+[▶ Watch the Yacplayer terminal interface demo](assets/Yacplayer_demo.mp4)
 
 Yacplayer is a local music player for Windows with a full-screen terminal interface. It plays audio through WASAPI shared mode, provides a queue and a two-panel file browser, renders FFT spectrum or waveform data from actual decoded PCM, and is operated entirely from the keyboard.
 
