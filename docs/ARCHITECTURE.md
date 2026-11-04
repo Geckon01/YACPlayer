@@ -109,8 +109,8 @@ sequenceDiagram
         A->>B: Scan(path, recursive) on worker
         B-->>A: queue paths
     else no path
-        A->>B: EnumerateAsync(last/current directory)
-        B-->>A: browser entries
+        A->>B: start cancellable EnumerateAsync(last/current directory)
+        B-->>A: enqueue generation-tagged browser completion
     end
     A->>E: create and apply volume/mute
     alt direct file supplied
@@ -133,15 +133,16 @@ sequenceDiagram
 
 Each frame:
 
-1. Processes all currently available keys with `Console.KeyAvailable`.
-2. Reads terminal width and height inside an exception boundary.
-3. obtains a `PlaybackSnapshot`;
-4. runs only the active visualizer path: FFT plus smoothing for `Spectrum`, a latest-sample read for `Waveform`, and no DSP read for `Off`;
-5. resets pending visualization data when the mode changes;
-6. creates a `ScreenBuffer` matching the current terminal size;
-7. builds either browser or player layout;
-8. diffs the frame against the previous one and writes ANSI output;
-9. waits `1000 / FPS` milliseconds with cancellation.
+1. Drains generation-checked audio and browser completions into UI-owned state.
+2. Processes all currently available keys with `Console.KeyAvailable`.
+3. Reads terminal width and height inside an exception boundary.
+4. obtains a `PlaybackSnapshot`;
+5. runs only the active visualizer path: FFT plus smoothing for `Spectrum`, a latest-sample read for `Waveform`, and no DSP read for `Off`;
+6. resets pending visualization data when the mode changes;
+7. creates a `ScreenBuffer` matching the current terminal size;
+8. builds either browser or player layout;
+9. diffs the frame against the previous one and writes ANSI output;
+10. waits `1000 / FPS` milliseconds with cancellation.
 
 The loop does not busy-spin. The requested FPS is an upper bound because frame work is added before the fixed delay.
 
@@ -172,7 +173,7 @@ Invariants:
 
 ### Shuffle
 
-`RefillBag` stores every index except the current one. `PopBag` randomly chooses and removes an index, preventing repeats within the current cycle. `All` creates a new cycle after exhaustion; `Off` ends it.
+`RefillBag` stores every index except the current one. `PopBag` randomly chooses and removes an index, preventing repeats within the current cycle. `Add`/`AddRange` append only newly inserted indices while shuffle is active, preserving already-consumed entries instead of rebuilding the cycle. `All` creates a new cycle after exhaustion; `Off` ends it.
 
 ### History and removal
 
@@ -180,13 +181,13 @@ Invariants:
 
 ### Duplicate policy
 
-The playlist itself permits duplicates. Browser operations use case-insensitive full-path comparisons, so repeated browser activation does not add the same path twice.
+The playlist itself permits duplicates. `App` maintains a case-insensitive `HashSet` of queued paths for browser operations, so repeated activation and directory batches reject duplicates in average constant time per path. The set is synchronized when browser additions or queue removals change the playlist.
 
 ## 9. Filesystem and browser
 
 ### Enumeration
 
-`FileBrowser.EnumerateAsync` runs enumeration inside `Task.Run`, creates `BrowserEntry` values, retains directories and allowlisted extensions, sorts directories first, then sorts names case-insensitively.
+`FileBrowser.EnumerateAsync` runs cancellable enumeration inside `Task.Run`, uses the attributes supplied by `FileSystemInfo` enumeration instead of a separate `Directory.Exists` probe per entry, retains directories and allowlisted extensions, sorts directories first, then sorts names case-insensitively.
 
 Allowlist: `.wav`, `.mp3`, `.m4a`, `.aac`, `.wma`, `.flac`.
 
@@ -194,7 +195,7 @@ Allowlist: `.wav`, `.mp3`, `.m4a`, `.aac`, `.wma`, `.flac`.
 
 ### Navigation
 
-`App` stores path, entries, selected index, a `ListViewport`, and a virtual-drive-level flag. Index `0` is reserved for `[..]` in normal directories and `[This PC]` at the virtual root. `Backspace` and `Enter` on `[..]` share the same parent transition. Above a drive root, ready drives from `DriveInfo.GetDrives()` are displayed.
+`App` stores path, entries, selected index, a `ListViewport`, and a virtual-drive-level flag. Starting navigation cancels the previous load, clears the old entries, and returns immediately to the frame loop. The worker posts a generation-tagged completion; the UI loop ignores stale generations and alone replaces browser state. Index `0` is reserved for `[..]` in normal directories and `[This PC]` at the virtual root. `Backspace` and `Enter` on `[..]` share the same parent transition. Above a drive root, ready drives from `DriveInfo.GetDrives()` are displayed.
 
 The file list, main queue, and browser-side queue each own an independent `ListViewport`. It keeps a target index visible with a one-row margin, clamps its offset after collection/window-size changes, and never reorders the underlying collection. The main queue follows `SelectedIndex` (which playback also synchronizes to `CurrentIndex`); the browser-side informational queue follows `CurrentIndex` when available.
 
@@ -355,7 +356,7 @@ CLI FPS, recursive, and no-visualizer flags override the in-memory model. Loaded
 - Thread pool: directory enumeration/scanning and isolated metadata loads.
 - NAudio event context: `PlaybackStopped` only attempts a bounded channel write.
 
-No unbounded thread creation is present. The ring and bounded audio-event channel are the explicit cross-context boundaries. Playlist and audio transitions occur on the UI loop; NAudio callbacks only publish generation-tagged events and never block waiting for the consumer.
+No unbounded thread creation is present. The ring, bounded audio-event channel, and browser/metadata completion queues are the explicit cross-context boundaries. Playlist, browser, and audio transitions occur on the UI loop; workers publish generation-checked results and NAudio callbacks never block waiting for the consumer.
 
 ## 19. Resource and performance characteristics
 
@@ -447,7 +448,7 @@ Priority gaps:
 6. Split the growing `App` controller into input, application state, and layout components.
 7. Reuse two screen buffers and pooled ANSI output to reduce per-frame GC pressure.
 8. Avoid consuming partial FFT windows; skip spectrum analysis while playback is inactive.
-9. Batch multichannel downmix/ring writes and make recursive library insertion incremental and cancellable.
+9. Batch multichannel downmix/ring writes and make recursive scans incremental and cancellable.
 
 ## 24. Extension points
 

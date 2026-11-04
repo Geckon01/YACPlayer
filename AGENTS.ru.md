@@ -30,7 +30,7 @@
 - ATL 7.19.0 лениво загружает метаданные только текущего трека.
 - Настройки: `%LOCALAPPDATA%\Yacplayer\settings.json`.
 - Есть framework-dependent win-x64 publish, win-x64 Native AOT, Inno Setup 6 и self-contained x64 MSIX для Microsoft Store.
-- 21 xUnit-тест без реального аудиоустройства.
+- 23 xUnit-теста без реального аудиоустройства.
 - MIT; в документации есть уведомление об AI-assisted/generated code.
 - Публичные документы ведутся сначала на английском и имеют русские версии.
 
@@ -50,6 +50,7 @@
 - Громкость 0–100%, mute сохраняет логическое значение громкости.
 - Repeat Off/All/One; One повторяет при автоматическом EOF, но ручной Next переходит дальше.
 - Shuffle использует bag без повторов внутри цикла и history для Previous.
+- Batch insert добавляет в активный shuffle bag только новые indices, не перестраивая текущий цикл.
 - Сохранённые repeat и shuffle применяются к `Playlist` при запуске.
 - EOF и ошибки передаются из NAudio в UI-loop через bounded queue с generation tag; устаревшие события игнорируются.
 - Удаление из очереди никогда не удаляет файл.
@@ -63,6 +64,7 @@
 - Сначала каталоги, затем регистронезависимая сортировка имён.
 - Видимые расширения: `.wav`, `.mp3`, `.m4a`, `.aac`, `.wma`, `.flac`.
 - `Enter` входит в каталог или добавляет/запускает файл; `A` добавляет файл/каталог без запуска.
+- Перечисление каталога отменяемо и возвращает generation-checked результат через UI queue, поэтому открытие большой папки не останавливает rendering. Browser использует постоянный case-insensitive set путей и один batch insert в playlist.
 - Рекурсивный scan пропускает reparse points и недоступные ветви.
 
 ### Терминальный UI
@@ -104,6 +106,7 @@ Program / CLI
             -> VolumeSampleProvider -> WasapiPlayer -> Windows output
             -> bounded AudioEventQueue -> UI-owned EOF/error handling
         -> MetadataService -> ConcurrentQueue -> UI-owned TrackEntry
+        -> FileBrowser worker -> ConcurrentQueue -> UI-owned browser state
         -> ScreenBuffer -> ANSI diff -> TerminalSession
         <-> SettingsStore -> settings.json
 ```
@@ -204,7 +207,7 @@ Installer собирается после обновления `artifacts/publis
 2. Не потреблять неполные FFT-window; хранить последний spectrum и делать time-based decay.
 3. Переиспользовать screen buffers и ANSI storage вместо allocation на каждом frame.
 4. Пакетно downmix/write multichannel samples вместо `ring.Write` на каждый sample.
-5. Сделать scan и массовое добавление incremental/cancellable/batched.
+5. Сделать recursive scan incremental/cancellable/batched; startup и `A` пока материализуют весь результат.
 6. Зафиксировать CPU/allocation/memory/callback/terminal/soak baselines.
 
 ### P2/P3
@@ -254,6 +257,7 @@ Installer собирается после обновления `artifacts/publis
 
 ## Текущая проверка
 
+- Обновление отзывчивости больших папок 2026-11-04: перечисление browser-каталога теперь выполняется как отменяемый background request с generation tag, а результат применяется UI-loop, поэтому открытие папки не блокирует input/rendering. Добавление в очередь использует постоянный case-insensitive set путей и один `Playlist.AddRange`; активный shuffle-cycle получает только новые indices без перестройки bag. `FileBrowser` использует attributes, полученные перечислением, вместо отдельного `Directory.Exists` для каждого элемента. Добавлены regression-тесты shuffle-cycle и cancellation; `dotnet build Yacplayer.sln -c Release` завершился с 0 warnings/0 errors, `dotnet test Yacplayer.sln -c Release --no-build` прошёл 23/23 теста. Ручной TUI smoke с большой/медленной папкой остаётся невыполненным.
 - Исправление ownership воспроизведения и настроек 2026-11-04: сохранённые repeat/shuffle применяются к `Playlist`, неработающие fullscreen-настройка и клавиша `H` удалены, прямые NAudio callbacks EOF/error заменены bounded `AudioEventQueue` с generation tag, которую читает UI-loop. Добавлены regression-тесты идемпотентного восстановления shuffle, переполнения bounded queue и удаления устаревшей строки help. `dotnet build Yacplayer.sln -c Release` завершился с 0 warnings/0 errors, `dotnet test Yacplayer.sln -c Release --no-build` прошёл 21/21 тест. Ручной WASAPI smoke естественного EOF/error и TUI остаётся невыполненным.
 - Обновление FAQ в README 2026-11-04: раздел диагностики в обеих языковых версиях переименован в FAQ, существующие пункты преобразованы в формат вопрос–ответ и добавлено объяснение Windows-only target и работ, необходимых для реальной поддержки Linux/macOS. Относительные ссылки документации и Markdown-разметка проверены без пересборки кода.
 - Исправление inline-видео README 2026-11-04: repository-relative ссылки в обеих языковых версиях заменены отдельной строкой с GitHub attachment URL `https://github.com/user-attachments/assets/6b0c0f89-5e3f-4fda-b4a3-3f3359404995`, по тому же Markdown-шаблону, который использует TwitchDownloader, чтобы GitHub показывал встроенный player. Attachment загружен через редактор README на GitHub, постоянный URL проверен на перенаправление к `video/mp4`, удалённая правка отменена без коммита, локальный исходный MP4 оставлен tracked для сохранности.

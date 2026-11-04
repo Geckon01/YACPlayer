@@ -19,6 +19,7 @@ Yacplayer — локальный музыкальный плеер для Window
 - очередь, удаление без удаления файла, repeat Off/All/One, shuffle bag и автоматическая прокрутка viewport, удерживающая выбранный/текущий трек на экране;
 - запуск с файлом или каталогом;
 - встроенный Midnight Commander-подобный браузер: каталоги, `[..]`, список дисков `This PC`, добавление файла/каталога;
+- отменяемая фоновая загрузка каталогов без остановки TUI, hash-дедупликация и пакетное добавление больших папок в очередь;
 - адаптивный ANSI/VT-интерфейс с цветными панелями, белыми надписями на зелёном фоне заголовков, текущей версией справа в верхней рамке и diff-rendering с полной перерисовкой строк для Unicode переменной ширины;
 - переключаемые FFT-спектр с Hann window и плавным true-color градиентом зелёный/жёлтый/красный, waveform из `.` и отключённый режим визуализатора; амплитуда спектра и waveform не зависит от выходной громкости и mute;
 - JSON-настройки в профиле пользователя;
@@ -169,7 +170,7 @@ dotnet test Yacplayer.sln -c Release
 
 GitHub Actions выполняет ту же последовательность restore, Release-сборки и тестов на Windows для каждого push и pull request.
 
-Текущий набор содержит 21 unit-тест без требования аудиоустройства: CLI, четырёхкомпонентная assembly version, playlist и восстановление repeat/shuffle, bounded audio-event delivery, прокрутка/clamp list viewport, ring buffer wrapping/latest reads, pre-volume PCM tap, ANSI/true-color diff styles, batching и обновление Unicode-строк, settings, FFT, metadata fallback и browser filtering/sorting.
+Текущий набор содержит 23 unit-теста без требования аудиоустройства: CLI, четырёхкомпонентная assembly version, playlist и восстановление repeat/shuffle, batch insert внутри активного shuffle-cycle, bounded audio-event delivery, прокрутка/clamp list viewport, ring buffer wrapping/latest reads, pre-volume PCM tap, ANSI/true-color diff styles, batching и обновление Unicode-строк, settings, FFT, metadata fallback и отменяемая browser filtering/sorting.
 
 Публикация framework-dependent win-x64:
 

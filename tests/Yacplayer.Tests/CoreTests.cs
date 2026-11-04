@@ -23,6 +23,29 @@ public class CoreTests
         Assert.Equal(3, remaining.Append(first).Distinct().Count());
     }
     [Fact]
+    public void PlaylistBatchInsertPreservesTheActiveShuffleCycle()
+    {
+        var playlist = new Playlist(7);
+        playlist.AddRange(Enumerable.Range(0, 4).Select(i => new TrackEntry(i.ToString())));
+        playlist.SetShuffle(true);
+
+        var played = new List<string>
+        {
+            playlist.Next()!.Path,
+            playlist.Next()!.Path
+        };
+
+        playlist.AddRange([new TrackEntry("4"), new TrackEntry("5")]);
+        TrackEntry? next;
+        while ((next = playlist.Next()) is not null)
+        {
+            played.Add(next.Path);
+        }
+
+        Assert.Equal(6, played.Count);
+        Assert.Equal(6, played.Distinct().Count());
+    }
+    [Fact]
     public void AudioEventQueueIsBoundedAndDropsTheOldestEvent()
     {
         var events = new AudioEventQueue(2);

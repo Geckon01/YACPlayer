@@ -27,6 +27,16 @@ public class DspAndMetadataTests
         var dir=Directory.CreateTempSubdirectory(); try { Directory.CreateDirectory(System.IO.Path.Combine(dir.FullName,"z")); await File.WriteAllBytesAsync(System.IO.Path.Combine(dir.FullName,"a.wav"),[]); await File.WriteAllTextAsync(System.IO.Path.Combine(dir.FullName,"b.txt"),""); var entries=await FileBrowser.EnumerateAsync(dir.FullName); Assert.True(entries[0].IsDirectory); Assert.Equal(2,entries.Count); } finally { dir.Delete(true); }
     }
 
+    [Fact]
+    public async Task BrowserEnumerationHonorsCancellation()
+    {
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            FileBrowser.EnumerateAsync(Environment.CurrentDirectory, cancellation.Token));
+    }
+
     private sealed class ArraySampleProvider(float[] samples) : ISampleProvider
     {
         private int _position;

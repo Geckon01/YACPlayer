@@ -30,7 +30,7 @@ Do not remove or weaken this contract. Its purpose is to let a new agent underst
 - Metadata: ATL 7.19.0, loaded lazily for the current track only.
 - Persistence: per-user JSON at `%LOCALAPPDATA%\Yacplayer\settings.json`.
 - Distribution: framework-dependent win-x64 publish, optional win-x64 Native AOT publish, an Inno Setup 6 installer, and a self-contained x64 MSIX build for Microsoft Store.
-- Automated tests: 21 xUnit tests that avoid real audio hardware.
+- Automated tests: 23 xUnit tests that avoid real audio hardware.
 - License: MIT. The repository and user-facing documentation carry an AI-assisted/generated-code notice.
 - Public documentation is English-first with Russian counterparts.
 
@@ -50,6 +50,7 @@ Do not remove or weaken this contract. Its purpose is to let a new agent underst
 - Volume is clamped to 0–100%; mute preserves the logical volume.
 - Repeat modes are Off, All, and One. Repeat One applies to automatic EOF, while manual Next still advances.
 - Shuffle uses a bag to avoid repeats within one cycle and a history stack for Previous.
+- Batch insertion appends only new indices to an active shuffle bag instead of rebuilding the cycle.
 - Saved repeat and shuffle values are restored into the playlist during startup.
 - Playback completion and errors cross from NAudio into the UI loop through a bounded, generation-tagged event queue; stale events are ignored.
 - Removing a queue entry never deletes a filesystem object.
@@ -63,6 +64,7 @@ Do not remove or weaken this contract. Its purpose is to let a new agent underst
 - Directories appear before files; names are sorted case-insensitively.
 - Visible extensions: `.wav`, `.mp3`, `.m4a`, `.aac`, `.wma`, and `.flac`.
 - `Enter` enters a directory or adds/plays a file. `A` appends a selected file or a directory scan without starting playback.
+- Directory enumeration is cancellable and completes through a generation-checked UI queue, so opening a large folder does not stop rendering. Browser additions use a persistent case-insensitive path set and one playlist batch insertion.
 - Recursive scans skip reparse points and inaccessible branches.
 
 ### Terminal UI
@@ -106,6 +108,7 @@ Program / CLI
             -> VolumeSampleProvider -> WasapiPlayer -> Windows default output device
             -> bounded AudioEventQueue -> UI-owned EOF/error handling
         -> MetadataService -> ConcurrentQueue -> UI-owned TrackEntry update
+        -> FileBrowser worker -> ConcurrentQueue -> UI-owned browser state
         -> ScreenBuffer -> ANSI diff -> TerminalSession
         <-> SettingsStore -> settings.json
 ```
@@ -229,7 +232,7 @@ The detailed backlog is [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md). Keep this 
 2. Stop consuming and discarding partial FFT windows; retain the last valid spectrum and use time-based decay.
 3. Reuse screen buffers and ANSI output storage instead of allocating a cell array and diff string every frame.
 4. Batch multichannel downmix/ring writes; the callback currently invokes `ring.Write` per mono sample.
-5. Make recursive scanning and large queue insertion incremental, cancellable, and batched.
+5. Make recursive scanning incremental, cancellable, and batched; startup and `A` scans still materialize their full result.
 6. Establish CPU, allocation, memory-growth, callback-duration, terminal-throughput, and soak baselines.
 
 ### P2/P3: behavior and maintainability
@@ -288,6 +291,7 @@ Local-only caution at the time of this update: `yacplayer-history-backup-2026110
 
 Update this section after every material change.
 
+- Large-folder responsiveness update on 2026-11-04: browser directory enumeration now runs as a cancellable generation-tagged background request whose completion is applied by the UI loop, avoiding render/input stalls while a folder opens. Browser queue additions use a persistent case-insensitive path set and one `Playlist.AddRange`; active shuffle cycles append only the new indices instead of rebuilding the bag. `FileBrowser` uses enumerated filesystem attributes instead of a separate `Directory.Exists` call per entry. Added shuffle-cycle and cancellation regressions; `dotnet build Yacplayer.sln -c Release` succeeded with 0 warnings/0 errors and `dotnet test Yacplayer.sln -c Release --no-build` passed 23/23 tests. Manual TUI testing with a large/slow directory remains pending.
 - Playback ownership/settings cleanup on 2026-11-04: restored saved repeat/shuffle state into `Playlist`, removed the nonfunctional fullscreen-visualizer setting and `H` control, and replaced direct NAudio EOF/error callbacks with a bounded, generation-tagged `AudioEventQueue` drained by the UI loop. Added regression coverage for idempotent shuffle restoration, bounded queue overflow, and removal of the obsolete help entry. `dotnet build Yacplayer.sln -c Release` succeeded with 0 warnings/0 errors and `dotnet test Yacplayer.sln -c Release --no-build` passed 21/21 tests. Real WASAPI natural-EOF/error and TUI smoke testing remains pending.
 - README FAQ update on 2026-11-04: renamed the troubleshooting section to FAQ in both language variants, converted its entries to question-and-answer wording, and added an explanation of the Windows-only target and the work required for real Linux/macOS support. Relative documentation links and Markdown formatting were checked without rebuilding code.
 - Inline README video correction on 2026-11-04: replaced the repository-relative demo links in both language variants with the standalone GitHub attachment URL `https://github.com/user-attachments/assets/6b0c0f89-5e3f-4fda-b4a3-3f3359404995`, matching the Markdown pattern used by TwitchDownloader so GitHub renders an inline player. The attachment was uploaded through GitHub's README editor, its permanent URL was verified to resolve to `video/mp4`, the remote edit was cancelled without a commit, and the local source MP4 remains tracked for preservation.

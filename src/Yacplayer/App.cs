@@ -12,6 +12,7 @@ public sealed class App(Arguments arguments)
 {
     private static readonly string VersionLabel = $" v{typeof(App).Assembly.GetName().Version?.ToString(4) ?? "0.0.0.0"} ";
     private readonly Playlist _playlist = new();
+    private readonly HashSet<string> _queuedPaths = new(StringComparer.OrdinalIgnoreCase);
     private readonly SampleRingBuffer _ring = new(32768);
     private readonly SettingsStore _store = new();
     private PlayerSettings _settings = new();
@@ -25,6 +26,9 @@ public sealed class App(Arguments arguments)
     private readonly ListViewport _queueViewport = new();
     private readonly ListViewport _browserQueueViewport = new();
     private bool _browserAtDrives;
+    private readonly ConcurrentQueue<BrowserLoadCompletion> _browserLoadCompletions = new();
+    private CancellationTokenSource? _browserLoadCancellation;
+    private long _browserLoadGeneration;
     private readonly ConcurrentQueue<MetadataCompletion> _metadataCompletions = new();
     private TrackEntry? _metadataTarget;
     private CancellationTokenSource? _metadataCancellation;
@@ -41,9 +45,9 @@ public sealed class App(Arguments arguments)
         if (Directory.Exists(start)) _settings.LastDirectory = start;
         var files = arguments.Path is null ? [] : await Task.Run(() => FileBrowser.Scan(start, _settings.Recursive).ToArray(), ct);
         _playlist.AddRange(files.Select(path => new TrackEntry(path)));
+        _queuedPaths.UnionWith(files);
         _browserPath = Directory.Exists(start) ? start : Path.GetDirectoryName(start) ?? Environment.CurrentDirectory;
         _browserVisible = arguments.Path is null;
-        if (_browserVisible) await LoadBrowserAsync(_browserPath, ct);
 
         var audioEvents = new AudioEventQueue();
         using var audio = new AudioEngine(_ring, audioEvents);
@@ -52,6 +56,7 @@ public sealed class App(Arguments arguments)
         if (_settings.Muted) audio.ToggleMute();
         if (File.Exists(start) && _playlist.Items.Count > 0) { _playlist.Play(0); audio.Open(start); }
         if (Console.IsOutputRedirected || Console.IsInputRedirected) { Console.WriteLine($"Yacplayer: {_playlist.Items.Count} track(s) loaded. Interactive TUI requires a terminal."); return 0; }
+        if (_browserVisible) StartBrowserLoad(_browserPath, ct);
 
         using var terminal = new TerminalSession();
         ScreenBuffer? previous = null;
@@ -63,6 +68,7 @@ public sealed class App(Arguments arguments)
         while (!ct.IsCancellationRequested)
         {
             ProcessAudioEvents(audio, audioEvents);
+            ApplyBrowserLoadCompletions();
             while (Console.KeyAvailable) if (!await HandleAsync(Console.ReadKey(true), audio, ct)) goto done;
             int width, height;
             try { width = Math.Max(20, Console.WindowWidth); height = Math.Max(8, Console.WindowHeight); } catch { break; }
@@ -94,6 +100,7 @@ public sealed class App(Arguments arguments)
             try { await Task.Delay(1000 / _settings.Fps, ct); } catch (OperationCanceledException) { break; }
         }
     done:
+        CancelBrowserLoad();
         _metadataCancellation?.Cancel();
         _metadataCancellation?.Dispose();
         audio.Stop();
@@ -111,11 +118,15 @@ public sealed class App(Arguments arguments)
             switch (key.Key)
             {
                 case ConsoleKey.Q: return false;
-                case ConsoleKey.F: case ConsoleKey.Escape: _browserVisible = false; return true;
+                case ConsoleKey.F:
+                case ConsoleKey.Escape:
+                    _browserVisible = false;
+                    CancelBrowserLoad();
+                    return true;
                 case ConsoleKey.UpArrow: _browserSelected = Math.Max(0, _browserSelected - 1); return true;
                 case ConsoleKey.DownArrow: _browserSelected = Math.Min(_browserEntries.Count, _browserSelected + 1); return true;
-                case ConsoleKey.Backspace: await GoToParentAsync(ct); return true;
-                case ConsoleKey.Enter: await OpenBrowserSelectionAsync(audio, ct); return true;
+                case ConsoleKey.Backspace: GoToParent(ct); return true;
+                case ConsoleKey.Enter: OpenBrowserSelection(audio, ct); return true;
                 case ConsoleKey.A: await AppendBrowserSelectionAsync(ct); return true;
             }
             return true;
@@ -133,7 +144,14 @@ public sealed class App(Arguments arguments)
             case ConsoleKey.DownArrow: _playlist.Select(_playlist.SelectedIndex + 1); break;
             case ConsoleKey.Enter: Play(_playlist.Play(_playlist.SelectedIndex), audio); break;
             case ConsoleKey.Delete:
+                var removedPath = (uint)_playlist.SelectedIndex < (uint)_playlist.Items.Count
+                    ? _playlist.Items[_playlist.SelectedIndex].Path
+                    : null;
                 var current = _playlist.Remove(_playlist.SelectedIndex);
+                if (removedPath is not null && !_playlist.Items.Any(item => string.Equals(item.Path, removedPath, StringComparison.OrdinalIgnoreCase)))
+                {
+                    _queuedPaths.Remove(removedPath);
+                }
                 if (current is null) audio.Stop();
                 else if (audio.Snapshot.Path is not null && !string.Equals(current.Path, audio.Snapshot.Path, StringComparison.OrdinalIgnoreCase)) audio.Open(current.Path);
                 break;
@@ -143,7 +161,11 @@ public sealed class App(Arguments arguments)
             case ConsoleKey.S: _playlist.ToggleShuffle(); _message = $"Shuffle {(_playlist.Shuffle ? "on" : "off")}"; break;
             case ConsoleKey.R: _playlist.SetRepeat((RepeatMode)(((int)_playlist.Repeat + 1) % 3)); _message = $"Repeat {_playlist.Repeat}"; break;
             case ConsoleKey.V: _settings.VisualizerMode = (VisualizerMode)(((int)_settings.VisualizerMode + 1) % 3); break;
-            case ConsoleKey.F: _browserVisible = true; await LoadBrowserAsync(_browserPath, ct); break;
+            case ConsoleKey.F:
+                _browserVisible = true;
+                if (_browserAtDrives) ShowDrives();
+                else StartBrowserLoad(_browserPath, ct);
+                break;
             case ConsoleKey.Oem2 when key.KeyChar == '?': _help = true; break;
         }
         return true;
@@ -198,37 +220,100 @@ public sealed class App(Arguments arguments)
         }
     }
 
-    private async Task LoadBrowserAsync(string path, CancellationToken ct)
+    private void StartBrowserLoad(string path, CancellationToken appCancellation)
     {
+        CancelBrowserLoad();
+        _browserLoadCancellation = CancellationTokenSource.CreateLinkedTokenSource(appCancellation);
+        var generation = ++_browserLoadGeneration;
+        _browserPath = path;
+        _browserEntries = [];
+        _browserSelected = 0;
+        _browserViewport.Reset();
+        _browserAtDrives = false;
         _message = $"Loading {path}";
-        var entries = await FileBrowser.EnumerateAsync(path, ct);
-        _browserPath = path; _browserEntries = entries; _browserSelected = 0; _browserViewport.Reset(); _browserAtDrives = false;
-        _settings.LastDirectory = path;
-        _message = entries.Count == 0 ? "No audio files or subdirectories (use [..] to go back)" : $"{entries.Count} item(s)";
+        _ = LoadBrowserAsync(path, generation, _browserLoadCancellation.Token);
     }
 
-    private async Task GoToParentAsync(CancellationToken ct)
+    private async Task LoadBrowserAsync(string path, long generation, CancellationToken ct)
+    {
+        try
+        {
+            var entries = await FileBrowser.EnumerateAsync(path, ct);
+            if (!ct.IsCancellationRequested)
+            {
+                _browserLoadCompletions.Enqueue(new BrowserLoadCompletion(generation, path, entries, null));
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            if (!ct.IsCancellationRequested)
+            {
+                _browserLoadCompletions.Enqueue(new BrowserLoadCompletion(generation, path, [], ex.Message));
+            }
+        }
+    }
+
+    private void ApplyBrowserLoadCompletions()
+    {
+        while (_browserLoadCompletions.TryDequeue(out var completion))
+        {
+            if (completion.Generation != _browserLoadGeneration)
+            {
+                continue;
+            }
+
+            _browserLoadCancellation?.Dispose();
+            _browserLoadCancellation = null;
+
+            if (completion.Error is not null)
+            {
+                _message = $"Cannot open {completion.Path}: {completion.Error}";
+                continue;
+            }
+
+            _browserPath = completion.Path;
+            _browserEntries = completion.Entries;
+            _settings.LastDirectory = completion.Path;
+            _message = completion.Entries.Count == 0
+                ? "No audio files or subdirectories (use [..] to go back)"
+                : $"{completion.Entries.Count} item(s)";
+        }
+    }
+
+    private void CancelBrowserLoad()
+    {
+        _browserLoadGeneration++;
+        _browserLoadCancellation?.Cancel();
+        _browserLoadCancellation?.Dispose();
+        _browserLoadCancellation = null;
+    }
+
+    private void GoToParent(CancellationToken ct)
     {
         var parent = Directory.GetParent(_browserPath);
         if (_browserAtDrives) return;
-        if (parent is not null) await LoadBrowserAsync(parent.FullName, ct);
+        if (parent is not null) StartBrowserLoad(parent.FullName, ct);
         else ShowDrives();
     }
 
     private void ShowDrives()
     {
+        CancelBrowserLoad();
         _browserAtDrives = true; _browserPath = "This PC"; _browserSelected = 0; _browserViewport.Reset();
         _browserEntries = DriveInfo.GetDrives().Where(drive => drive.IsReady).Select(drive => new BrowserEntry(drive.RootDirectory.FullName, true)).ToArray();
         _message = $"{_browserEntries.Count} drive(s)";
     }
 
-    private async Task OpenBrowserSelectionAsync(AudioEngine audio, CancellationToken ct)
+    private void OpenBrowserSelection(AudioEngine audio, CancellationToken ct)
     {
-        if (_browserSelected == 0) { await GoToParentAsync(ct); return; }
+        if (_browserSelected == 0) { GoToParent(ct); return; }
         var entryIndex = _browserSelected - 1;
         if ((uint)entryIndex >= (uint)_browserEntries.Count) return;
         var entry = _browserEntries[entryIndex];
-        if (entry.IsDirectory) { await LoadBrowserAsync(entry.Path, ct); return; }
+        if (entry.IsDirectory) { StartBrowserLoad(entry.Path, ct); return; }
         var index = FindOrAddTrack(entry.Path);
         Play(_playlist.Play(index), audio);
         _browserVisible = false;
@@ -244,15 +329,25 @@ public sealed class App(Arguments arguments)
         var paths = entry.IsDirectory
             ? await Task.Run(() => FileBrowser.Scan(entry.Path, _settings.Recursive).ToArray(), ct)
             : [entry.Path];
-        var added = 0;
-        foreach (var path in paths) if (!_playlist.Items.Any(item => string.Equals(item.Path, path, StringComparison.OrdinalIgnoreCase))) { _playlist.Add(new TrackEntry(path)); added++; }
-        _message = $"Added {added} track(s)";
+        var additions = new List<TrackEntry>(paths.Length);
+        foreach (var path in paths)
+        {
+            if (_queuedPaths.Add(path))
+            {
+                additions.Add(new TrackEntry(path));
+            }
+        }
+
+        _playlist.AddRange(additions);
+        _message = $"Added {additions.Count} track(s)";
     }
 
     private int FindOrAddTrack(string path)
     {
         for (var i = 0; i < _playlist.Items.Count; i++) if (string.Equals(_playlist.Items[i].Path, path, StringComparison.OrdinalIgnoreCase)) return i;
-        _playlist.Add(new TrackEntry(path)); return _playlist.Items.Count - 1;
+        _playlist.Add(new TrackEntry(path));
+        _queuedPaths.Add(path);
+        return _playlist.Items.Count - 1;
     }
 
     private ScreenBuffer Draw(int width, int height, PlaybackSnapshot playback, float[] bands, float[] waveform, int waveformCount)
@@ -512,6 +607,12 @@ public sealed class App(Arguments arguments)
         if (width <= 0) return "";
         return value.Length <= width ? value : width == 1 ? value[..1] : value[..(width - 1)] + "~";
     }
+
+    private sealed record BrowserLoadCompletion(
+        long Generation,
+        string Path,
+        IReadOnlyList<BrowserEntry> Entries,
+        string? Error);
 
     private sealed record MetadataCompletion(TrackEntry Entry, TrackMetadata? Metadata, string? Error);
 }

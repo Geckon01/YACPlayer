@@ -110,8 +110,8 @@ sequenceDiagram
         A->>B: Scan(path, recursive) on worker
         B-->>A: queue paths
     else no path
-        A->>B: EnumerateAsync(last/current dir)
-        B-->>A: browser entries
+        A->>B: start cancellable EnumerateAsync(last/current dir)
+        B-->>A: enqueue browser completion с generation tag
     end
     A->>E: create, set volume/mute
     alt direct file supplied
@@ -141,15 +141,16 @@ sequenceDiagram
 
 Главный цикл на каждом кадре:
 
-1. Пока `Console.KeyAvailable`, синхронно/асинхронно обрабатывает доступные клавиши.
-2. Безопасно читает `Console.WindowWidth/Height`; исключение разрывает loop.
-3. Получает `PlaybackSnapshot` из `AudioEngine`.
-4. Выполняет только активный путь визуализации: FFT со сглаживанием для `Spectrum`, чтение последних samples для `Waveform`, отсутствие DSP-чтения для `Off`.
-5. При смене режима сбрасывает накопленные данные визуализации.
-6. Создаёт новый `ScreenBuffer` текущего размера.
-7. Строит browser layout либо player layout.
-8. Вычисляет ANSI diff относительно прошлого кадра и пишет его в terminal.
-9. Делает `Task.Delay(1000 / FPS, token)`.
+1. Применяет generation-checked audio/browser completions к UI-owned state.
+2. Пока `Console.KeyAvailable`, синхронно/асинхронно обрабатывает доступные клавиши.
+3. Безопасно читает `Console.WindowWidth/Height`; исключение разрывает loop.
+4. Получает `PlaybackSnapshot` из `AudioEngine`.
+5. Выполняет только активный путь визуализации: FFT со сглаживанием для `Spectrum`, чтение последних samples для `Waveform`, отсутствие DSP-чтения для `Off`.
+6. При смене режима сбрасывает накопленные данные визуализации.
+7. Создаёт новый `ScreenBuffer` текущего размера.
+8. Строит browser layout либо player layout.
+9. Вычисляет ANSI diff относительно прошлого кадра и пишет его в terminal.
+10. Делает `Task.Delay(1000 / FPS, token)`.
 
 Цикл не busy-spins. Фактический FPS является верхней границей: время обработки и rendering прибавляется к delay.
 
@@ -187,7 +188,7 @@ sequenceDiagram
 
 ### 8.2 Shuffle
 
-`RefillBag` заполняет bag всеми indices, кроме текущего. `PopBag` выбирает случайный элемент и удаляет его. Поэтому один index не повторяется до исчерпания bag. При `All` начинается новый цикл; при `Off` исчерпанный цикл завершает очередь.
+`RefillBag` заполняет bag всеми indices, кроме текущего. `PopBag` выбирает случайный элемент и удаляет его. Поэтому один index не повторяется до исчерпания bag. При активном shuffle `Add`/`AddRange` добавляют только indices новых элементов, не возвращая уже использованные элементы перестройкой цикла. При `All` начинается новый цикл; при `Off` исчерпанный цикл завершает очередь.
 
 ### 8.3 Previous и removal
 
@@ -199,13 +200,13 @@ sequenceDiagram
 
 ### 8.4 Duplicate policy
 
-Сам `Playlist` разрешает дубликаты. Browser UI использует `FindOrAddTrack` и case-insensitive full-path comparison, поэтому повторный `Enter` на том же файле не создаёт второй элемент. `A` также исключает уже существующие пути.
+Сам `Playlist` разрешает дубликаты. `App` поддерживает case-insensitive `HashSet` путей browser-очереди, поэтому повторный `Enter` и batch через `A` отбрасывают дубликаты в среднем за constant time на путь. Set синхронизируется при browser-add и удалении из queue.
 
 ## 9. Browser и filesystem
 
 ### 9.1 Enumeration
 
-`FileBrowser.EnumerateAsync` выполняет `Directory.EnumerateFileSystemEntries` внутри `Task.Run`, преобразует элементы в `BrowserEntry`, оставляет каталоги и allowlisted extensions, затем сортирует каталоги первыми и имена case-insensitive.
+`FileBrowser.EnumerateAsync` выполняет отменяемое перечисление `FileSystemInfo` внутри `Task.Run`, использует уже полученные attributes вместо отдельного `Directory.Exists` для каждого элемента, оставляет каталоги и allowlisted extensions, затем сортирует каталоги первыми и имена case-insensitive.
 
 Allowlist: `.wav`, `.mp3`, `.m4a`, `.aac`, `.wma`, `.flac`.
 
@@ -213,7 +214,7 @@ Allowlist: `.wav`, `.mp3`, `.m4a`, `.aac`, `.wma`, `.flac`.
 
 ### 9.2 Navigation state
 
-`App` хранит browser path, entries, selected index, `ListViewport` и признак виртуального уровня дисков. Index `0` всегда зарезервирован:
+`App` хранит browser path, entries, selected index, `ListViewport` и признак виртуального уровня дисков. Новая навигация отменяет предыдущую загрузку, очищает старые entries и немедленно возвращает управление frame loop. Worker публикует completion с generation tag; UI-loop игнорирует устаревшие generation и единолично заменяет browser state. Index `0` всегда зарезервирован:
 
 - обычный каталог: `[..]`;
 - виртуальный root: `[This PC]`.
@@ -438,7 +439,7 @@ CLI FPS, recursive и no-visualizer меняют in-memory settings текуще
 - thread pool: directory enumeration/scan и isolated metadata load;
 - NAudio event context: `PlaybackStopped` только пытается записать событие в bounded channel.
 
-Нет unbounded thread creation. Явные межконтекстные границы — ring и bounded audio-event channel. Playlist/audio transitions выполняются UI-loop; NAudio callback только публикует событие с generation tag и никогда не ждёт consumer.
+Нет unbounded thread creation. Явные межконтекстные границы — ring, bounded audio-event channel и browser/metadata completion queues. Playlist/browser/audio transitions выполняются UI-loop; workers публикуют generation-checked результаты, а NAudio callback никогда не ждёт consumer.
 
 ## 19. Performance characteristics
 
@@ -450,7 +451,7 @@ CLI FPS, recursive и no-visualizer меняют in-memory settings текуще
 - ScreenBuffer создаётся на каждый кадр; это UI-side allocation и не влияет на audio callback.
 - Diff renderer уменьшает terminal traffic, объединяя styled runs.
 - При DSP lag ring отбрасывает старые samples.
-- Directory enumeration выполняется вне UI thread, но direct startup scan завершается до открытия TUI.
+- Browser directory enumeration выполняется вне UI loop и не блокирует кадры; direct startup scan и scan по `A` всё ещё материализуют полный результат.
 
 Проект не заявляет конкретные CPU/RAM показатели без профилирования. Рекомендуемые инструменты: `dotnet-counters`, `dotnet-trace`, Windows Performance Recorder.
 

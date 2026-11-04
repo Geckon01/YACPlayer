@@ -19,6 +19,7 @@ Implemented:
 - queue removal without deleting files, repeat Off/All/One, shuffle bag navigation, and automatic viewport scrolling that keeps the selected/current track visible;
 - startup with either a file or a directory;
 - built-in Midnight Commander-style browser with directories, `[..]`, a `This PC` drive list, and file/folder queue insertion;
+- cancellable background directory loading that keeps the TUI responsive, plus hash-based deduplication and batch queue insertion for large folders;
 - adaptive ANSI/VT interface with colored panels, white captions on green title backgrounds, the current version in the top-right header, and differential rendering with full-row refresh for variable-width Unicode;
 - switchable Hann-windowed FFT spectrum with a smooth true-color green/yellow/red gradient, `.` waveform, and disabled visualizer modes; spectrum and waveform amplitude are independent of output volume and mute;
 - per-user JSON settings;
@@ -169,7 +170,7 @@ dotnet test Yacplayer.sln -c Release
 
 GitHub Actions runs the same restore, Release build, and test sequence on Windows for every push and pull request.
 
-The current suite contains 21 device-independent unit tests covering CLI parsing, four-part assembly versioning, playlist behavior and restored repeat/shuffle state, bounded audio-event delivery, list viewport scrolling/clamping, ring-buffer wrapping/latest reads, pre-volume PCM tapping, ANSI/true-color diff styles, batching and Unicode-row refresh, settings, FFT, metadata fallback, and browser filtering/sorting.
+The current suite contains 23 device-independent unit tests covering CLI parsing, four-part assembly versioning, playlist behavior and restored repeat/shuffle state, batch insertion during an active shuffle cycle, bounded audio-event delivery, list viewport scrolling/clamping, ring-buffer wrapping/latest reads, pre-volume PCM tapping, ANSI/true-color diff styles, batching and Unicode-row refresh, settings, FFT, metadata fallback, and cancellable browser filtering/sorting.
 
 Framework-dependent win-x64 publish:
 

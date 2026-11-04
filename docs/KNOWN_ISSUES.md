@@ -14,7 +14,7 @@ Priority meanings: **P0** blocks a supported release or risks incorrect behavior
 | P1 | Concurrency | The sample ring has unclear ownership of its read cursor | Lost, duplicated, or inconsistent visualization samples are possible |
 | P1 | Spectrum | Partial FFT windows are consumed and then discarded | Flicker, intermittent empty frames, and wasted work |
 | P1 | Rendering | A new cell array and ANSI output are allocated every frame | Avoidable GC and CPU load, especially at 60 FPS |
-| P1 | Library loading | Recursive scans and queue insertion are not incremental | Slow startup/UI stalls and poor scaling for large libraries |
+| P1 | Library loading | Startup and `A` recursive scans still materialize the full result | Slow startup or a temporarily unresponsive UI on very large trees |
 | P3 | Metadata | Metadata is intentionally loaded only for the current track | Unplayed queue entries retain filename/unknown-artist fallbacks |
 | P2 | Browser | Empty and inaccessible folders are not distinguished | Misleading error feedback |
 
@@ -52,11 +52,11 @@ For multichannel audio, `PcmTapSampleProvider` downmixes one frame at a time and
 
 Recommended action: downmix into a reusable block buffer and write once per decoded block. Avoid heap allocation, locks, FFT, metadata, logging, and terminal work in the callback.
 
-### P1 — non-incremental library scanning and insertion
+### P1 — non-incremental recursive scanning
 
-Recursive folder enumeration is asynchronous relative to rendering but produces the full result before applying it. Adding many tracks one at a time can repeatedly update playlist/shuffle structures and approach quadratic work. Startup scanning also completes before the TUI is available.
+Opening a browser directory is now cancellable and does not block rendering. Browser additions use a persistent path `HashSet`, one `AddRange`, and incremental shuffle-bag extension, removing the previous quadratic insertion path. However, startup scanning and directory scans triggered by `A` still materialize the complete result; the latter is awaited by the input handler before the batch is applied.
 
-Recommended action: use cancellable streaming enumeration, bounded batches, bulk playlist insertion, progress reporting, and UI-loop application of results. Define behavior for symlinks/reparse points, permission failures, duplicate paths, and a user navigating away during a scan.
+Recommended action: make recursive scans cancellable streaming operations with bounded batches, progress reporting, and UI-loop application of results. Define behavior for symlinks/reparse points, permission failures, and a user navigating away during a scan.
 
 ### P2 — unnecessary DSP work and repeated band mapping
 
@@ -162,7 +162,7 @@ A platform should not be marked supported until it can open all documented codec
 | P1 | Конкурентность | У курсора чтения кольцевого буфера нет одного владельца | Возможна потеря или несогласованность данных визуализации |
 | P1 | Спектр | Неполные FFT-окна считываются и выбрасываются | Мигание, пустые кадры и лишняя работа |
 | P1 | Рендеринг | На каждом кадре создаются массив ячеек и ANSI-строка | Лишние GC и CPU, особенно при 60 FPS |
-| P1 | Медиатека | Сканирование и добавление очереди не потоковые | Медленный запуск и плохое масштабирование |
+| P1 | Медиатека | Startup и recursive scan по `A` всё ещё материализуют полный результат | Медленный запуск или временно неотзывчивый UI на очень больших деревьях |
 | P3 | Метаданные | Метаданные намеренно читаются только для текущего трека | Незапускавшиеся элементы сохраняют имя файла/Unknown artist |
 | P2 | Браузер | Пустая и недоступная папки не различаются | Ошибочное сообщение пользователю |
 
@@ -200,11 +200,11 @@ Unit-тесты не используют реальное аудиоустро�
 
 Решение: сводить в переиспользуемый блочный буфер и записывать один раз на блок. В callback не должно быть heap allocation, locks, FFT, metadata, logging или terminal work.
 
-### P1 — сканирование и добавление медиатеки не инкрементальны
+### P1 — recursive scan не инкрементален
 
-Рекурсивное перечисление выполняется вне рендера, но результат применяется целиком. Поэлементное добавление большой очереди может многократно перестраивать связанные структуры и приближаться к квадратичной сложности. Стартовое сканирование завершается до открытия TUI.
+Открытие browser-каталога теперь отменяемо и не блокирует rendering. Browser-add использует постоянный `HashSet` путей, один `AddRange` и инкрементальное расширение shuffle bag, поэтому прежний квадратичный путь вставки устранён. Однако startup scan и scan каталога по `A` всё ещё полностью материализуют результат; последний ожидается input handler до применения batch.
 
-Решение: cancellable streaming enumeration, ограниченные batch, bulk insert, прогресс и применение результатов в UI-цикле. Определить поведение для symlink/reparse point, access denied, дублей и ухода пользователя из папки.
+Решение: cancellable streaming scan, ограниченные batch, прогресс и применение результатов в UI-цикле. Определить поведение для symlink/reparse point, access denied и ухода пользователя из папки.
 
 ### P2 — лишний DSP и повторный расчёт диапазонов
 

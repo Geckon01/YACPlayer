@@ -27,14 +27,23 @@ public sealed class Playlist
 
     public void Add(TrackEntry item)
     {
-        _items.Add(item);
-        RefillBag();
+        AddRange([item]);
     }
 
     public void AddRange(IEnumerable<TrackEntry> items)
     {
+        var firstNewIndex = _items.Count;
         _items.AddRange(items);
-        RefillBag();
+
+        if (!Shuffle)
+        {
+            return;
+        }
+
+        for (var index = firstNewIndex; index < _items.Count; index++)
+        {
+            _bag.Add(index);
+        }
     }
 
     public void Select(int index)
