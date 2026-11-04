@@ -86,7 +86,7 @@
 ### Упаковка
 
 - `assets/Yacplayer.ico` встроен через `ApplicationIcon`.
-- `assets/Yacplayer_demo.mp4` — беззвучная демонстрация продукта, ссылка на которую размещена в начале обеих версий README; `assets/Yacplayer_screenshot.png` сохранён как статический скриншот продукта.
+- Обе версии README встраивают беззвучную демонстрацию продукта через GitHub user-attachment URL; `assets/Yacplayer_demo.mp4` хранит исходное видео, а `assets/Yacplayer_screenshot.png` сохранён как статический скриншот продукта.
 - `artifacts/publish/` — отслеживаемый framework-dependent дистрибутив для installer.
 - `NativeAotWinX64.pubxml` создаёт self-contained trimmed AOT в `artifacts/publish-aot/`.
 - `Yacplayer.iss` устанавливает приложение для текущего пользователя в `%LOCALAPPDATA%\Programs\Yacplayer`, поддерживает английский/русский мастер и проверяет .NET 10.
@@ -254,6 +254,7 @@ Installer собирается после обновления `artifacts/publis
 
 ## Текущая проверка
 
+- Исправление inline-видео README 2026-11-04: repository-relative ссылки в обеих языковых версиях заменены отдельной строкой с GitHub attachment URL `https://github.com/user-attachments/assets/6b0c0f89-5e3f-4fda-b4a3-3f3359404995`, по тому же Markdown-шаблону, который использует TwitchDownloader, чтобы GitHub показывал встроенный player. Attachment загружен через редактор README на GitHub, постоянный URL проверен на перенаправление к `video/mp4`, удалённая правка отменена без коммита, локальный исходный MP4 оставлен tracked для сохранности.
 - Обновление демонстрации README 2026-11-04: ссылки на верхний скриншот в обеих языковых версиях заменены ссылками на предоставленный пользователем `assets/Yacplayer_demo.mp4`. H.264-видео длительностью 36,27 секунды имеет разрешение 1912x996, не содержит аудиопотока, занимает 6 758 466 байт и имеет SHA-256 `A8154462D12A16DFA725BA4612E525EC0E252332FE2B03B4C88D203C18384BBB`; целостность файла и обе относительные ссылки проверены без пересборки кода.
 - Style cleanup `Playlist.cs` 2026-11-04: repeat enum, поля/свойства, навигация воспроизведения, удаление, shuffle history/bag и helper loops развёрнуты в обычные блоки с сохранением порядка мутаций и алгоритмов. `dotnet format Yacplayer.sln whitespace --include src/Yacplayer/Library/Playlist.cs --no-restore` завершился успешно, `dotnet build Yacplayer.sln -c Release` прошёл с 0 warnings/0 errors, `dotnet test Yacplayer.sln -c Release --no-build` прошёл 18/18 тестов, включая playlist coverage.
 - Style cleanup `PlayerSettings.cs` 2026-11-04: visualizer enum и каждое validation rule развёрнуты в обычные блоки без изменения defaults, порядка валидации и допустимых значений. `dotnet format Yacplayer.sln whitespace --include src/Yacplayer/Configuration/PlayerSettings.cs --no-restore` завершился успешно, `dotnet build Yacplayer.sln -c Release` прошёл с 0 warnings/0 errors, `dotnet test Yacplayer.sln -c Release --no-build` прошёл 18/18 тестов.

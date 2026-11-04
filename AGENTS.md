@@ -86,7 +86,7 @@ Do not remove or weaken this contract. Its purpose is to let a new agent underst
 ### Packaging and branding
 
 - `assets/Yacplayer.ico` is embedded through `ApplicationIcon`; the PNG source is also retained.
-- `assets/Yacplayer_demo.mp4` is the silent product demo linked at the top of both README files; `assets/Yacplayer_screenshot.png` remains available as the static product screenshot.
+- Both README files embed the silent product demo through a GitHub user-attachment URL; `assets/Yacplayer_demo.mp4` retains the source video and `assets/Yacplayer_screenshot.png` remains available as the static product screenshot.
 - `artifacts/publish/` is the tracked framework-dependent distribution consumed by the installer.
 - `src/Yacplayer/Properties/PublishProfiles/NativeAotWinX64.pubxml` builds a self-contained, trimmed Native AOT executable into `artifacts/publish-aot/`.
 - `installer/Yacplayer.iss` performs a per-user x64 installation into `%LOCALAPPDATA%\Programs\Yacplayer`, provides English/Russian wizard languages, checks for .NET 10, and can create a desktop shortcut.
@@ -288,6 +288,7 @@ Local-only caution at the time of this update: `yacplayer-history-backup-2026110
 
 Update this section after every material change.
 
+- Inline README video correction on 2026-11-04: replaced the repository-relative demo links in both language variants with the standalone GitHub attachment URL `https://github.com/user-attachments/assets/6b0c0f89-5e3f-4fda-b4a3-3f3359404995`, matching the Markdown pattern used by TwitchDownloader so GitHub renders an inline player. The attachment was uploaded through GitHub's README editor, its permanent URL was verified to resolve to `video/mp4`, the remote edit was cancelled without a commit, and the local source MP4 remains tracked for preservation.
 - README demo update on 2026-11-04: replaced the top screenshot references in both language variants with links to the user-supplied `assets/Yacplayer_demo.mp4`. The 36.27-second H.264 video is 1912x996, contains no audio stream, is 6,758,466 bytes, and has SHA-256 `A8154462D12A16DFA725BA4612E525EC0E252332FE2B03B4C88D203C18384BBB`; media integrity and both relative links were checked without rebuilding code.
 - `Playlist.cs` style cleanup on 2026-11-04: expanded the repeat enum, fields/properties, playback navigation, removal, shuffle history/bag handling, and helper loops into conventional blocks while preserving mutation order and algorithms. `dotnet format Yacplayer.sln whitespace --include src/Yacplayer/Library/Playlist.cs --no-restore` completed successfully, `dotnet build Yacplayer.sln -c Release` succeeded with 0 warnings/0 errors, and `dotnet test Yacplayer.sln -c Release --no-build` passed 18/18 tests, including playlist coverage.
 - `PlayerSettings.cs` style cleanup on 2026-11-04: expanded the visualizer enum and each validation rule into conventional blocks without changing defaults, validation order, or accepted values. `dotnet format Yacplayer.sln whitespace --include src/Yacplayer/Configuration/PlayerSettings.cs --no-restore` completed successfully, `dotnet build Yacplayer.sln -c Release` succeeded with 0 warnings/0 errors, and `dotnet test Yacplayer.sln -c Release --no-build` passed 18/18 tests.
