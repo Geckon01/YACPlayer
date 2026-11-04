@@ -30,7 +30,7 @@ Do not remove or weaken this contract. Its purpose is to let a new agent underst
 - Metadata: ATL 7.19.0, loaded lazily for the current track only.
 - Persistence: per-user JSON at `%LOCALAPPDATA%\Yacplayer\settings.json`.
 - Distribution: framework-dependent win-x64 publish, optional win-x64 Native AOT publish, an Inno Setup 6 installer, and a self-contained x64 MSIX build for Microsoft Store.
-- Automated tests: 18 xUnit tests that avoid real audio hardware.
+- Automated tests: 21 xUnit tests that avoid real audio hardware.
 - License: MIT. The repository and user-facing documentation carry an AI-assisted/generated-code notice.
 - Public documentation is English-first with Russian counterparts.
 
@@ -50,6 +50,8 @@ Do not remove or weaken this contract. Its purpose is to let a new agent underst
 - Volume is clamped to 0–100%; mute preserves the logical volume.
 - Repeat modes are Off, All, and One. Repeat One applies to automatic EOF, while manual Next still advances.
 - Shuffle uses a bag to avoid repeats within one cycle and a history stack for Previous.
+- Saved repeat and shuffle values are restored into the playlist during startup.
+- Playback completion and errors cross from NAudio into the UI loop through a bounded, generation-tagged event queue; stale events are ignored.
 - Removing a queue entry never deletes a filesystem object.
 - Queue duplicates are permitted by `Playlist`, but browser add/play operations deduplicate paths case-insensitively.
 - Independent `ListViewport` instances keep the selected/current item visible in the main queue, browser file list, and browser-side queue without reordering their collections.
@@ -81,7 +83,7 @@ Do not remove or weaken this contract. Its purpose is to let a new agent underst
 - Only the currently playing entry is loaded through ATL. Cancellation follows track changes; the worker posts a completion to the UI loop rather than mutating the entry directly.
 - Settings validation clamps volume, accepts only 30/60 FPS and 2048/4096 FFT sizes, validates enums, and drops a missing last-directory path.
 - Malformed JSON is moved to `settings.json.bad` when possible. Saves use `settings.json.tmp` followed by replacement.
-- Volume, mute, visualizer mode, fullscreen flag, repeat, shuffle, recursive mode, FFT size, FPS, and last directory are represented in settings.
+- Volume, mute, visualizer mode, repeat, shuffle, recursive mode, FFT size, FPS, and last directory are represented in settings.
 
 ### Packaging and branding
 
@@ -102,6 +104,7 @@ Program / CLI
             -> PcmTapSampleProvider
                 -> SampleRingBuffer -> SpectrumAnalyzer or waveform reader
             -> VolumeSampleProvider -> WasapiPlayer -> Windows default output device
+            -> bounded AudioEventQueue -> UI-owned EOF/error handling
         -> MetadataService -> ConcurrentQueue -> UI-owned TrackEntry update
         -> ScreenBuffer -> ANSI diff -> TerminalSession
         <-> SettingsStore -> settings.json
@@ -111,7 +114,7 @@ Important execution contexts:
 
 - Main async loop: keyboard input, browser/playlist state, DSP reads, rendering, and settings orchestration.
 - NAudio playback thread: decoded sample reads, channel downmix, and ring writes.
-- NAudio event context: `PlaybackStopped`, error, and current EOF callback path.
+- NAudio event context: `PlaybackStopped` publishes a bounded, nonblocking event tagged with the active generation.
 - Thread pool: directory work and ATL metadata loading.
 
 Ownership and safety invariants:
@@ -119,7 +122,7 @@ Ownership and safety invariants:
 - There must be at most one active decoder/output pair.
 - Audio callback code must not perform FFT, terminal work, metadata parsing, JSON/file persistence, logging, blocking waits, or unbounded allocation.
 - Visualization transport must remain bounded and must never block playback.
-- Playlist/browser state should be owned by the UI loop; the existing EOF callback violation is technical debt, not a pattern to copy.
+- Playlist/browser state is owned by the UI loop; audio callbacks may publish events but must not transition playlist or audio state.
 - Queue deletion must never become disk deletion without an explicit separately reviewed feature.
 - User-controlled text must pass through `ScreenBuffer.Write`; never inject raw escape sequences into UI content.
 - Help/version paths must remain free of audio and alternate-screen initialization.
@@ -223,17 +226,14 @@ The detailed backlog is [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md). Keep this 
 ### P1: correctness and performance
 
 1. Replace the ring protocol with a proven SPSC design. Producer overflow and consumer reads currently both write `_read`.
-2. Route EOF/error events through a bounded UI-owned event channel. The current NAudio callback can mutate playlist/audio state outside the UI loop.
-3. Stop consuming and discarding partial FFT windows; retain the last valid spectrum and use time-based decay.
-4. Reuse screen buffers and ANSI output storage instead of allocating a cell array and diff string every frame.
-5. Batch multichannel downmix/ring writes; the callback currently invokes `ring.Write` per mono sample.
-6. Make recursive scanning and large queue insertion incremental, cancellable, and batched.
-7. Establish CPU, allocation, memory-growth, callback-duration, terminal-throughput, and soak baselines.
+2. Stop consuming and discarding partial FFT windows; retain the last valid spectrum and use time-based decay.
+3. Reuse screen buffers and ANSI output storage instead of allocating a cell array and diff string every frame.
+4. Batch multichannel downmix/ring writes; the callback currently invokes `ring.Write` per mono sample.
+5. Make recursive scanning and large queue insertion incremental, cancellable, and batched.
+6. Establish CPU, allocation, memory-growth, callback-duration, terminal-throughput, and soak baselines.
 
 ### P2/P3: behavior and maintainability
 
-- Restore saved repeat and shuffle values into a new `Playlist` during startup.
-- Implement the `H` fullscreen-visualizer layout or remove the nonfunctional setting/control.
 - Add a focused waveform rendering test that preserves the intentional `.` glyph and min/max envelope behavior.
 - Remove `Tab` focus and `/` search from CLI help until implemented, or implement the missing controls. `App.HandleAsync` currently handles neither.
 - Distinguish an inaccessible browser directory from an empty one.
@@ -288,6 +288,7 @@ Local-only caution at the time of this update: `yacplayer-history-backup-2026110
 
 Update this section after every material change.
 
+- Playback ownership/settings cleanup on 2026-11-04: restored saved repeat/shuffle state into `Playlist`, removed the nonfunctional fullscreen-visualizer setting and `H` control, and replaced direct NAudio EOF/error callbacks with a bounded, generation-tagged `AudioEventQueue` drained by the UI loop. Added regression coverage for idempotent shuffle restoration, bounded queue overflow, and removal of the obsolete help entry. `dotnet build Yacplayer.sln -c Release` succeeded with 0 warnings/0 errors and `dotnet test Yacplayer.sln -c Release --no-build` passed 21/21 tests. Real WASAPI natural-EOF/error and TUI smoke testing remains pending.
 - README FAQ update on 2026-11-04: renamed the troubleshooting section to FAQ in both language variants, converted its entries to question-and-answer wording, and added an explanation of the Windows-only target and the work required for real Linux/macOS support. Relative documentation links and Markdown formatting were checked without rebuilding code.
 - Inline README video correction on 2026-11-04: replaced the repository-relative demo links in both language variants with the standalone GitHub attachment URL `https://github.com/user-attachments/assets/6b0c0f89-5e3f-4fda-b4a3-3f3359404995`, matching the Markdown pattern used by TwitchDownloader so GitHub renders an inline player. The attachment was uploaded through GitHub's README editor, its permanent URL was verified to resolve to `video/mp4`, the remote edit was cancelled without a commit, and the local source MP4 remains tracked for preservation.
 - README demo update on 2026-11-04: replaced the top screenshot references in both language variants with links to the user-supplied `assets/Yacplayer_demo.mp4`. The 36.27-second H.264 video is 1912x996, contains no audio stream, is 6,758,466 bytes, and has SHA-256 `A8154462D12A16DFA725BA4612E525EC0E252332FE2B03B4C88D203C18384BBB`; media integrity and both relative links were checked without rebuilding code.

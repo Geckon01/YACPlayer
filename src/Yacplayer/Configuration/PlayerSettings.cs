@@ -17,7 +17,6 @@ public sealed class PlayerSettings
     public int Fps { get; set; } = 30;
     public int FftSize { get; set; } = 2048;
     public VisualizerMode VisualizerMode { get; set; } = VisualizerMode.Spectrum;
-    public bool FullscreenVisualizer { get; set; }
     public RepeatMode RepeatMode { get; set; }
     public bool Shuffle { get; set; }
     public bool Recursive { get; set; }

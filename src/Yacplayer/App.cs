@@ -35,6 +35,8 @@ public sealed class App(Arguments arguments)
         if (arguments.Fps is int fps) _settings.Fps = fps;
         if (arguments.NoVisualizer) _settings.VisualizerMode = VisualizerMode.Off;
         if (arguments.Recursive) _settings.Recursive = true;
+        _playlist.SetRepeat(_settings.RepeatMode);
+        _playlist.SetShuffle(_settings.Shuffle);
         var start = arguments.Path ?? (!string.IsNullOrEmpty(_settings.LastDirectory) ? _settings.LastDirectory : Environment.CurrentDirectory);
         if (Directory.Exists(start)) _settings.LastDirectory = start;
         var files = arguments.Path is null ? [] : await Task.Run(() => FileBrowser.Scan(start, _settings.Recursive).ToArray(), ct);
@@ -43,12 +45,11 @@ public sealed class App(Arguments arguments)
         _browserVisible = arguments.Path is null;
         if (_browserVisible) await LoadBrowserAsync(_browserPath, ct);
 
-        using var audio = new AudioEngine(_ring);
+        var audioEvents = new AudioEventQueue();
+        using var audio = new AudioEngine(_ring, audioEvents);
         var analyzer = new SpectrumAnalyzer(_ring, _settings.FftSize);
         audio.SetVolume(_settings.Volume);
         if (_settings.Muted) audio.ToggleMute();
-        audio.Error += value => _message = value;
-        audio.Ended += () => { var next = _playlist.Next(true); if (next is not null) audio.Open(next.Path); else _message = "Queue finished"; };
         if (File.Exists(start) && _playlist.Items.Count > 0) { _playlist.Play(0); audio.Open(start); }
         if (Console.IsOutputRedirected || Console.IsInputRedirected) { Console.WriteLine($"Yacplayer: {_playlist.Items.Count} track(s) loaded. Interactive TUI requires a terminal."); return 0; }
 
@@ -61,6 +62,7 @@ public sealed class App(Arguments arguments)
         var activeVisualizerMode = _settings.VisualizerMode;
         while (!ct.IsCancellationRequested)
         {
+            ProcessAudioEvents(audio, audioEvents);
             while (Console.KeyAvailable) if (!await HandleAsync(Console.ReadKey(true), audio, ct)) goto done;
             int width, height;
             try { width = Math.Max(20, Console.WindowWidth); height = Math.Max(8, Console.WindowHeight); } catch { break; }
@@ -141,7 +143,6 @@ public sealed class App(Arguments arguments)
             case ConsoleKey.S: _playlist.ToggleShuffle(); _message = $"Shuffle {(_playlist.Shuffle ? "on" : "off")}"; break;
             case ConsoleKey.R: _playlist.SetRepeat((RepeatMode)(((int)_playlist.Repeat + 1) % 3)); _message = $"Repeat {_playlist.Repeat}"; break;
             case ConsoleKey.V: _settings.VisualizerMode = (VisualizerMode)(((int)_settings.VisualizerMode + 1) % 3); break;
-            case ConsoleKey.H: _settings.FullscreenVisualizer = !_settings.FullscreenVisualizer; break;
             case ConsoleKey.F: _browserVisible = true; await LoadBrowserAsync(_browserPath, ct); break;
             case ConsoleKey.Oem2 when key.KeyChar == '?': _help = true; break;
         }
@@ -329,9 +330,36 @@ public sealed class App(Arguments arguments)
             for (var y = 2; y < height - 2; y++) screen.Write(2, y, new string(' ', Math.Max(0, width - 4)));
             screen.Write(4, 3, "KEYS: Space pause  X stop  N/P next/prev  Left/Right seek");
             screen.Write(4, 4, "+/- volume  M mute  Enter play  Del remove  S shuffle");
-            screen.Write(4, 5, "R repeat  V visualizer  H fullscreen  Q quit  Esc close");
+            screen.Write(4, 5, "R repeat  V visualizer  Q quit  Esc close");
         }
         return screen;
+    }
+
+    private void ProcessAudioEvents(AudioEngine audio, AudioEventQueue events)
+    {
+        while (events.TryRead(out var audioEvent))
+        {
+            if (audioEvent.Generation != audio.Generation)
+            {
+                continue;
+            }
+
+            if (audioEvent.Kind == AudioEventKind.Error)
+            {
+                _message = audioEvent.Message ?? "Audio playback failed";
+                continue;
+            }
+
+            var next = _playlist.Next(true);
+            if (next is not null)
+            {
+                audio.Open(next.Path);
+            }
+            else
+            {
+                _message = "Queue finished";
+            }
+        }
     }
 
     private static void DrawProgress(ScreenBuffer screen, int x, int y, int width, PlaybackSnapshot playback)

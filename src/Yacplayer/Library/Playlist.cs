@@ -147,9 +147,16 @@ public sealed class Playlist
         return CurrentIndex is int c2 ? _items[c2] : null;
     }
 
-    public void ToggleShuffle()
+    public void ToggleShuffle() => SetShuffle(!Shuffle);
+
+    public void SetShuffle(bool value)
     {
-        Shuffle = !Shuffle;
+        if (Shuffle == value)
+        {
+            return;
+        }
+
+        Shuffle = value;
         _history.Clear();
         RefillBag();
     }

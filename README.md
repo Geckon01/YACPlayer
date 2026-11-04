@@ -28,9 +28,7 @@ Implemented:
 
 Known limitations:
 
-- `H` toggles and persists the fullscreen-visualizer flag, but no dedicated fullscreen layout is currently rendered;
 - ATL metadata is loaded lazily only for the current track; entries that have never played retain filename/`Unknown artist` fallbacks, and bitrate is not calculated;
-- repeat and shuffle are saved to JSON but are not restored into the new `Playlist` instance during startup;
 - interactive queue search, mouse input, OGG, and Opus are not implemented;
 - actual WASAPI and codec behavior still requires manual verification on a machine with an audio device.
 
@@ -107,7 +105,6 @@ When stdin or stdout is redirected, the interactive TUI is not started. The proc
 | `S` | Toggle shuffle |
 | `R` | Repeat Off → All → One |
 | `V` | Spectrum → Waveform → Off; the panel title follows the active mode |
-| `H` | Toggle the persisted fullscreen flag; no dedicated layout yet |
 | `F` | Open the file browser |
 | `?` | Open the in-application help |
 | `Q` | Shut down cleanly |
@@ -153,7 +150,6 @@ Settings file: `%LOCALAPPDATA%\Yacplayer\settings.json`.
   "Fps": 30,
   "FftSize": 2048,
   "VisualizerMode": "Spectrum",
-  "FullscreenVisualizer": false,
   "RepeatMode": "Off",
   "Shuffle": false,
   "Recursive": false,
@@ -173,7 +169,7 @@ dotnet test Yacplayer.sln -c Release
 
 GitHub Actions runs the same restore, Release build, and test sequence on Windows for every push and pull request.
 
-The current suite contains 18 device-independent unit tests covering CLI parsing, four-part assembly versioning, playlist behavior, shuffle, list viewport scrolling/clamping, ring-buffer wrapping/latest reads, pre-volume PCM tapping, ANSI/true-color diff styles, batching and Unicode-row refresh, settings, FFT, metadata fallback, and browser filtering/sorting.
+The current suite contains 21 device-independent unit tests covering CLI parsing, four-part assembly versioning, playlist behavior and restored repeat/shuffle state, bounded audio-event delivery, list viewport scrolling/clamping, ring-buffer wrapping/latest reads, pre-volume PCM tapping, ANSI/true-color diff styles, batching and Unicode-row refresh, settings, FFT, metadata fallback, and browser filtering/sorting.
 
 Framework-dependent win-x64 publish:
 

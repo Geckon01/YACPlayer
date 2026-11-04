@@ -6,6 +6,41 @@ public class CoreTests
     [Fact] public void AssemblyUsesFourPartReleaseVersion() { Assert.Equal(new Version(1,26,3,11), typeof(Yacplayer.App).Assembly.GetName().Version); Assert.Contains("1.26.3.11", Arguments.HelpText); }
     [Fact] public void PlaylistRepeatAndRemovalAreSafe() { var p = new Playlist(1); Assert.Null(p.Next()); p.Add(new("a")); p.Add(new("b")); Assert.Equal("a", p.Next()!.Path); Assert.Equal("b", p.Next()!.Path); Assert.Null(p.Next(true)); p.SetRepeat(RepeatMode.All); Assert.Equal("a", p.Next(true)!.Path); p.Remove(0); Assert.Single(p.Items); }
     [Fact] public void ShuffleDoesNotRepeatWithinCycle() { var p = new Playlist(2); p.AddRange(Enumerable.Range(0, 5).Select(i => new TrackEntry(i.ToString()))); p.ToggleShuffle(); var paths = Enumerable.Range(0, 5).Select(_ => p.Next()!.Path).ToArray(); Assert.Equal(5, paths.Distinct().Count()); }
+    [Fact]
+    public void PlaylistCanRestoreRepeatAndShuffleWithoutRefillingAnActiveCycle()
+    {
+        var playlist = new Playlist(2);
+        playlist.AddRange(Enumerable.Range(0, 3).Select(i => new TrackEntry(i.ToString())));
+        playlist.SetRepeat(RepeatMode.All);
+        playlist.SetShuffle(true);
+
+        var first = playlist.Next()!.Path;
+        playlist.SetShuffle(true);
+        var remaining = new[] { playlist.Next()!.Path, playlist.Next()!.Path };
+
+        Assert.Equal(RepeatMode.All, playlist.Repeat);
+        Assert.True(playlist.Shuffle);
+        Assert.Equal(3, remaining.Append(first).Distinct().Count());
+    }
+    [Fact]
+    public void AudioEventQueueIsBoundedAndDropsTheOldestEvent()
+    {
+        var events = new AudioEventQueue(2);
+        events.Publish(new AudioEvent(AudioEventKind.Ended, 1));
+        events.Publish(new AudioEvent(AudioEventKind.Error, 2, "old error"));
+        events.Publish(new AudioEvent(AudioEventKind.Ended, 3));
+
+        Assert.True(events.TryRead(out var first));
+        Assert.True(events.TryRead(out var second));
+        Assert.False(events.TryRead(out _));
+        Assert.Equal(2, first.Generation);
+        Assert.Equal(3, second.Generation);
+    }
+    [Fact]
+    public void HelpDoesNotAdvertiseTheUnimplementedFullscreenControl()
+    {
+        Assert.DoesNotContain("H fullscreen", Arguments.HelpText, StringComparison.OrdinalIgnoreCase);
+    }
     [Fact] public void RingWrapsAndDropsOldest() { var r = new SampleRingBuffer(4); r.Write([1,2,3,4,5]); Span<float> output = stackalloc float[4]; Assert.Equal(4, r.Read(output)); Assert.Equal(new float[]{2,3,4,5}, output.ToArray()); Assert.Equal(0, r.Count); }
     [Fact] public void RingCanReadLatestSamplesAndDiscardBacklog() { var r = new SampleRingBuffer(8); r.Write([1,2,3,4,5,6]); Span<float> output = stackalloc float[3]; Assert.Equal(3, r.ReadLatest(output)); Assert.Equal(new float[]{4,5,6},output.ToArray()); Assert.Equal(0,r.Count); }
     [Fact] public void ScreenDiffIsEmptyForIdenticalFrames() { var a = new ScreenBuffer(5,2); a.Write(0,0,"hello"); var b = new ScreenBuffer(5,2); b.Write(0,0,"hello"); Assert.Equal("", b.Diff(a)); b.Write(4,1,"x"); Assert.Contains("x", b.Diff(a)); }

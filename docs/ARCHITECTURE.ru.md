@@ -266,13 +266,7 @@ AudioFileReader (ISampleProvider)
 
 ### 10.3 EOF и error events
 
-`WasapiPlayer.PlaybackStopped` обрабатывается в `OnStopped`:
-
-- exception преобразуется в `Error` event;
-- intentional stop/close подавляет EOF;
-- естественный конец вызывает `Ended`.
-
-`App` подписан на `Ended`, вызывает `Playlist.Next(automatic: true)` и открывает следующий track либо пишет `Queue finished`.
+`WasapiPlayer.PlaybackStopped` не изменяет playlist или UI. Он неблокирующе публикует bounded `AudioEvent` с generation активной пары decoder/output. Intentional stop/close подавляет EOF и инвалидирует generation. UI-loop читает очередь, игнорирует устаревшие generation, показывает ошибки и при естественном завершении вызывает `Playlist.Next(automatic: true)`, открывая следующий track либо выводя `Queue finished`.
 
 ### 10.4 Snapshot boundary
 
@@ -409,9 +403,7 @@ Validation:
 
 `SaveAsync` создаёт directory, пишет `.tmp`, затем `File.Move(tmp, target, overwrite: true)`.
 
-CLI FPS, recursive и no-visualizer меняют in-memory settings текущего запуска. На shutdown сохраняются volume, mute, repeat, shuffle и остальная модель.
-
-Текущий wiring gap: загруженные `RepeatMode`/`Shuffle` не передаются в `Playlist` при startup.
+CLI FPS, recursive и no-visualizer меняют in-memory settings текущего запуска. Загруженные `RepeatMode`/`Shuffle` применяются к `Playlist` при startup. На shutdown сохраняются volume, mute, repeat, shuffle и остальная модель.
 
 ## 16. Metadata
 
@@ -427,8 +419,8 @@ CLI FPS, recursive и no-visualizer меняют in-memory settings текуще
 |---|---|
 | CLI parse | stderr + exit 2 |
 | Missing startup path | stderr + exit 3 |
-| Decoder/output open | `AudioEngine.Error`, status message, process продолжает работу |
-| Playback exception | `Error` event |
+| Decoder/output open | bounded `AudioEventKind.Error`, status message в UI, process продолжает работу |
+| Playback exception | bounded `AudioEventKind.Error` с generation tag |
 | Browser IO/access | empty list, UI остаётся активным |
 | Recursive scan branch error | branch skip |
 | Bad settings JSON | rename `.bad`, defaults |
@@ -444,9 +436,9 @@ CLI FPS, recursive и no-visualizer меняют in-memory settings текуще
 - main async thread: input, playlist state, browser state, DSP, layout, settings orchestration;
 - NAudio playback thread: calls provider `Read`, следовательно выполняет PCM tap/ring write;
 - thread pool: directory enumeration/scan и isolated metadata load;
-- NAudio event context: `PlaybackStopped` и downstream `Ended` handler.
+- NAudio event context: `PlaybackStopped` только пытается записать событие в bounded channel.
 
-Нет unbounded thread creation. Основной shared mutable boundary — ring counters/data. Playlist/UI state предполагается main-loop owned, хотя EOF callback в текущем wiring может инициировать playlist transition из NAudio event context. Это важная точка будущего hardening: events следует помещать в UI command queue.
+Нет unbounded thread creation. Явные межконтекстные границы — ring и bounded audio-event channel. Playlist/audio transitions выполняются UI-loop; NAudio callback только публикует событие с generation tag и никогда не ждёт consumer.
 
 ## 19. Performance characteristics
 
@@ -542,15 +534,12 @@ Inno Setup:
 
 Приоритетные разрывы текущей архитектуры:
 
-1. Восстанавливать repeat/shuffle из settings в `Playlist`.
-2. Реализовать fullscreen visualizer для сохранённого flag либо убрать неработающий control.
-3. Перенести EOF/Error events в `Channel<AudioEvent>`/command queue, чтобы playlist state менялся только UI loop.
-4. Отличать inaccessible directory от legitimately empty directory.
-5. Добавить grapheme/display-width aware text layout.
-6. Перевести ring implementation на чётко доказанный SPSC algorithm и добавить длительный concurrent stress test.
-7. Добавить integration WAV fixture, manual/optional WASAPI smoke test и terminal snapshot tests.
-8. Рассмотреть self-contained installer или автоматический bootstrap runtime вместо блокирующей prerequisite check.
-9. Разделить крупный `App` на controller/input/layout components по мере роста функций.
+1. Отличать inaccessible directory от legitimately empty directory.
+2. Добавить grapheme/display-width aware text layout.
+3. Перевести ring implementation на чётко доказанный SPSC algorithm и добавить длительный concurrent stress test.
+4. Добавить integration WAV fixture, manual/optional WASAPI smoke test и terminal snapshot tests.
+5. Рассмотреть self-contained installer или автоматический bootstrap runtime вместо блокирующей prerequisite check.
+6. Разделить крупный `App` на controller/input/layout components по мере роста функций.
 
 ## 24. Точки расширения
 

@@ -231,7 +231,7 @@ The player is built in shared mode with a requested latency of 100 ms.
 
 ### EOF and errors
 
-`PlaybackStopped` maps exceptions to `Error`. Intentional stop/close suppresses EOF. Natural completion raises `Ended`; `App` selects the next automatic playlist entry or displays `Queue finished`.
+`PlaybackStopped` performs no playlist or UI mutation. It nonblockingly publishes a bounded `AudioEvent` tagged with the decoder/output generation. Intentional stop/close suppresses EOF and invalidates the generation. The UI loop drains the queue, ignores stale generations, presents errors, and selects the next automatic playlist entry or displays `Queue finished` after natural completion.
 
 ### Snapshot boundary
 
@@ -322,9 +322,7 @@ Validation:
 
 `SettingsStore.LoadAsync` returns defaults for a missing file or IO failure. Malformed JSON is moved to `.bad` when possible. `SaveAsync` creates the parent directory, writes `.tmp`, then moves it over the destination.
 
-CLI FPS, recursive, and no-visualizer flags override the in-memory model. Shutdown stores current volume, mute, repeat, shuffle, and the remaining settings.
-
-Current wiring gap: loaded repeat/shuffle values are not applied to `Playlist` during startup.
+CLI FPS, recursive, and no-visualizer flags override the in-memory model. Loaded repeat/shuffle values are applied to `Playlist` during startup. Shutdown stores current volume, mute, repeat, shuffle, and the remaining settings.
 
 ## 16. Metadata
 
@@ -340,8 +338,8 @@ Current wiring gap: loaded repeat/shuffle values are not applied to `Playlist` d
 |---|---|
 | CLI parse | stderr and exit 2 |
 | Missing startup path | stderr and exit 3 |
-| Decoder/output open | `AudioEngine.Error`, status update, application continues |
-| Playback failure | `Error` event |
+| Decoder/output open | bounded `AudioEventKind.Error`, UI status update, application continues |
+| Playback failure | bounded, generation-tagged `AudioEventKind.Error` |
 | Browser IO/access | empty list, UI remains active |
 | Recursive branch failure | branch is skipped |
 | Malformed settings | rename to `.bad`, use defaults |
@@ -355,9 +353,9 @@ Current wiring gap: loaded repeat/shuffle values are not applied to `Playlist` d
 - Main async context: input, playlist/browser state, DSP, layout, and settings orchestration.
 - NAudio playback thread: provider reads, mono tap, ring writes.
 - Thread pool: directory enumeration/scanning and isolated metadata loads.
-- NAudio event context: `PlaybackStopped` and downstream `Ended` handling.
+- NAudio event context: `PlaybackStopped` only attempts a bounded channel write.
 
-No unbounded thread creation is present. The ring is the intended shared mutable boundary. A current weakness is that the EOF callback can transition playlist/audio state outside the UI loop. Future hardening should enqueue audio events into a UI-owned command channel.
+No unbounded thread creation is present. The ring and bounded audio-event channel are the explicit cross-context boundaries. Playlist and audio transitions occur on the UI loop; NAudio callbacks only publish generation-tagged events and never block waiting for the consumer.
 
 ## 19. Resource and performance characteristics
 
@@ -441,18 +439,15 @@ The shortcut working directory is `{userdocs}` so a first browser launch does no
 
 Priority gaps:
 
-1. Restore repeat and shuffle settings into `Playlist`.
-2. Implement fullscreen-visualizer layout or remove the nonfunctional control.
-3. Move EOF/error events into `Channel<AudioEvent>` so playlist state changes only on the UI loop.
-4. Distinguish inaccessible directories from empty directories.
-5. Add grapheme/display-width-aware text layout.
-6. Replace the ring with a clearly proven SPSC implementation and add sustained concurrency tests.
-7. Add generated-WAV integration, optional WASAPI smoke, and terminal snapshot tests.
-8. Consider a self-contained installer or runtime bootstrapper.
-10. Split the growing `App` controller into input, application state, and layout components.
-11. Reuse two screen buffers and pooled ANSI output to reduce per-frame GC pressure.
-12. Avoid consuming partial FFT windows; skip spectrum analysis while playback is inactive.
-13. Batch multichannel downmix/ring writes and make recursive library insertion incremental and cancellable.
+1. Distinguish inaccessible directories from empty directories.
+2. Add grapheme/display-width-aware text layout.
+3. Replace the ring with a clearly proven SPSC implementation and add sustained concurrency tests.
+4. Add generated-WAV integration, optional WASAPI smoke, and terminal snapshot tests.
+5. Consider a self-contained installer or runtime bootstrapper.
+6. Split the growing `App` controller into input, application state, and layout components.
+7. Reuse two screen buffers and pooled ANSI output to reduce per-frame GC pressure.
+8. Avoid consuming partial FFT windows; skip spectrum analysis while playback is inactive.
+9. Batch multichannel downmix/ring writes and make recursive library insertion incremental and cancellable.
 
 ## 24. Extension points
 

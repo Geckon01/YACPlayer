@@ -28,9 +28,7 @@ Yacplayer — локальный музыкальный плеер для Window
 
 Текущие ограничения:
 
-- флаг fullscreen-визуализатора переключается клавишей `H` и сохраняется, но отдельная fullscreen-компоновка пока не отрисовывается;
 - ATL-метаданные лениво загружаются только для текущего трека; ещё не воспроизводившиеся элементы используют имя файла/`Unknown artist`, а bitrate не вычисляется;
-- repeat/shuffle сохраняются в JSON, но при старте пока не применяются обратно к новому экземпляру `Playlist`;
 - интерактивный поиск очереди, mouse input, OGG и Opus отсутствуют;
 - WASAPI и реальные кодеки требуют ручной проверки на машине со звуковым устройством.
 
@@ -107,7 +105,6 @@ yacplayer [path] [--recursive] [--fps 30|60] [--no-visualizer]
 | `S` | Shuffle on/off |
 | `R` | Repeat Off → All → One |
 | `V` | Spectrum → Waveform → Off; заголовок панели отражает активный режим |
-| `H` | Переключить сохранённый fullscreen-флаг; отдельный layout пока не реализован |
 | `F` | Открыть файловый браузер |
 | `?` | Открыть встроенную справку |
 | `Q` | Корректно завершить работу |
@@ -153,7 +150,6 @@ yacplayer [path] [--recursive] [--fps 30|60] [--no-visualizer]
   "Fps": 30,
   "FftSize": 2048,
   "VisualizerMode": "Spectrum",
-  "FullscreenVisualizer": false,
   "RepeatMode": "Off",
   "Shuffle": false,
   "Recursive": false,
@@ -173,7 +169,7 @@ dotnet test Yacplayer.sln -c Release
 
 GitHub Actions выполняет ту же последовательность restore, Release-сборки и тестов на Windows для каждого push и pull request.
 
-Текущий набор содержит 18 unit-тестов без требования аудиоустройства: CLI, четырёхкомпонентная assembly version, playlist, shuffle, прокрутка/clamp list viewport, ring buffer wrapping/latest reads, pre-volume PCM tap, ANSI/true-color diff styles, batching и обновление Unicode-строк, settings, FFT, metadata fallback и browser filtering/sorting.
+Текущий набор содержит 21 unit-тест без требования аудиоустройства: CLI, четырёхкомпонентная assembly version, playlist и восстановление repeat/shuffle, bounded audio-event delivery, прокрутка/clamp list viewport, ring buffer wrapping/latest reads, pre-volume PCM tap, ANSI/true-color diff styles, batching и обновление Unicode-строк, settings, FFT, metadata fallback и browser filtering/sorting.
 
 Публикация framework-dependent win-x64:
 

@@ -30,7 +30,7 @@
 - ATL 7.19.0 лениво загружает метаданные только текущего трека.
 - Настройки: `%LOCALAPPDATA%\Yacplayer\settings.json`.
 - Есть framework-dependent win-x64 publish, win-x64 Native AOT, Inno Setup 6 и self-contained x64 MSIX для Microsoft Store.
-- 18 xUnit-тестов без реального аудиоустройства.
+- 21 xUnit-тест без реального аудиоустройства.
 - MIT; в документации есть уведомление об AI-assisted/generated code.
 - Публичные документы ведутся сначала на английском и имеют русские версии.
 
@@ -50,6 +50,8 @@
 - Громкость 0–100%, mute сохраняет логическое значение громкости.
 - Repeat Off/All/One; One повторяет при автоматическом EOF, но ручной Next переходит дальше.
 - Shuffle использует bag без повторов внутри цикла и history для Previous.
+- Сохранённые repeat и shuffle применяются к `Playlist` при запуске.
+- EOF и ошибки передаются из NAudio в UI-loop через bounded queue с generation tag; устаревшие события игнорируются.
 - Удаление из очереди никогда не удаляет файл.
 - `Playlist` допускает дубли, браузер устраняет их по полному пути без учёта регистра.
 - Независимые `ListViewport` удерживают выбранный/текущий элемент видимым в основной очереди, списке файлов и очереди внутри browser, не переставляя элементы коллекций.
@@ -81,7 +83,7 @@
 - ATL загружает только текущий элемент. Результат передаётся через concurrent queue и применяется UI-loop.
 - Валидация ограничивает volume, FPS 30/60, FFT 2048/4096, enum и существование last directory.
 - Повреждённый JSON переносится в `.bad`; сохранение идёт через `.tmp`.
-- Модель содержит volume, mute, visualizer/fullscreen, repeat, shuffle, recursive, FFT, FPS и last directory.
+- Модель содержит volume, mute, visualizer, repeat, shuffle, recursive, FFT, FPS и last directory.
 
 ### Упаковка
 
@@ -100,6 +102,7 @@ Program / CLI
         -> AudioEngine -> AudioFileReader -> PcmTapSampleProvider
             -> SampleRingBuffer -> SpectrumAnalyzer / waveform
             -> VolumeSampleProvider -> WasapiPlayer -> Windows output
+            -> bounded AudioEventQueue -> UI-owned EOF/error handling
         -> MetadataService -> ConcurrentQueue -> UI-owned TrackEntry
         -> ScreenBuffer -> ANSI diff -> TerminalSession
         <-> SettingsStore -> settings.json
@@ -109,7 +112,7 @@ Program / CLI
 
 - main async loop: input, browser/playlist, DSP reads, rendering, settings;
 - NAudio playback thread: декодированные samples, downmix и ring writes;
-- NAudio event context: `PlaybackStopped`, error и текущий EOF-путь;
+- NAudio event context: `PlaybackStopped` неблокирующе публикует bounded event с generation tag;
 - thread pool: каталоги и ATL metadata.
 
 Инварианты:
@@ -117,7 +120,7 @@ Program / CLI
 - Одновременно не более одной пары decoder/output.
 - Audio callback не выполняет FFT, terminal, metadata, JSON/file I/O, logging, blocking wait или неограниченные allocation.
 - Sample transport ограничен и не блокирует playback.
-- Playlist/browser должны принадлежать UI-loop; текущий EOF callback — долг, а не образец.
+- Playlist/browser принадлежат UI-loop; audio callbacks могут публиковать события, но не меняют playlist/audio state.
 - Queue removal не удаляет файлы.
 - Пользовательский текст проходит через `ScreenBuffer.Write`, без raw ANSI.
 - Help/version не создают audio/alternate screen.
@@ -198,17 +201,14 @@ Installer собирается после обновления `artifacts/publis
 ### P1
 
 1. Заменить ring на доказанный SPSC: producer и consumer сейчас оба пишут `_read`.
-2. Передавать EOF/error в bounded UI event channel; callback сейчас меняет playlist/audio вне UI-loop.
-3. Не потреблять неполные FFT-window; хранить последний spectrum и делать time-based decay.
-4. Переиспользовать screen buffers и ANSI storage вместо allocation на каждом frame.
-5. Пакетно downmix/write multichannel samples вместо `ring.Write` на каждый sample.
-6. Сделать scan и массовое добавление incremental/cancellable/batched.
-7. Зафиксировать CPU/allocation/memory/callback/terminal/soak baselines.
+2. Не потреблять неполные FFT-window; хранить последний spectrum и делать time-based decay.
+3. Переиспользовать screen buffers и ANSI storage вместо allocation на каждом frame.
+4. Пакетно downmix/write multichannel samples вместо `ring.Write` на каждый sample.
+5. Сделать scan и массовое добавление incremental/cancellable/batched.
+6. Зафиксировать CPU/allocation/memory/callback/terminal/soak baselines.
 
 ### P2/P3
 
-- Восстанавливать repeat/shuffle из settings в `Playlist`.
-- Реализовать fullscreen для `H` либо убрать неработающий control/setting.
 - Добавить focused rendering test, фиксирующий намеренный символ `.` и min/max envelope waveform.
 - Убрать из help неработающие `Tab` и `/ search` либо реализовать их.
 - Отличать inaccessible directory от empty.
@@ -254,6 +254,7 @@ Installer собирается после обновления `artifacts/publis
 
 ## Текущая проверка
 
+- Исправление ownership воспроизведения и настроек 2026-11-04: сохранённые repeat/shuffle применяются к `Playlist`, неработающие fullscreen-настройка и клавиша `H` удалены, прямые NAudio callbacks EOF/error заменены bounded `AudioEventQueue` с generation tag, которую читает UI-loop. Добавлены regression-тесты идемпотентного восстановления shuffle, переполнения bounded queue и удаления устаревшей строки help. `dotnet build Yacplayer.sln -c Release` завершился с 0 warnings/0 errors, `dotnet test Yacplayer.sln -c Release --no-build` прошёл 21/21 тест. Ручной WASAPI smoke естественного EOF/error и TUI остаётся невыполненным.
 - Обновление FAQ в README 2026-11-04: раздел диагностики в обеих языковых версиях переименован в FAQ, существующие пункты преобразованы в формат вопрос–ответ и добавлено объяснение Windows-only target и работ, необходимых для реальной поддержки Linux/macOS. Относительные ссылки документации и Markdown-разметка проверены без пересборки кода.
 - Исправление inline-видео README 2026-11-04: repository-relative ссылки в обеих языковых версиях заменены отдельной строкой с GitHub attachment URL `https://github.com/user-attachments/assets/6b0c0f89-5e3f-4fda-b4a3-3f3359404995`, по тому же Markdown-шаблону, который использует TwitchDownloader, чтобы GitHub показывал встроенный player. Attachment загружен через редактор README на GitHub, постоянный URL проверен на перенаправление к `video/mp4`, удалённая правка отменена без коммита, локальный исходный MP4 оставлен tracked для сохранности.
 - Обновление демонстрации README 2026-11-04: ссылки на верхний скриншот в обеих языковых версиях заменены ссылками на предоставленный пользователем `assets/Yacplayer_demo.mp4`. H.264-видео длительностью 36,27 секунды имеет разрешение 1912x996, не содержит аудиопотока, занимает 6 758 466 байт и имеет SHA-256 `A8154462D12A16DFA725BA4612E525EC0E252332FE2B03B4C88D203C18384BBB`; целостность файла и обе относительные ссылки проверены без пересборки кода.

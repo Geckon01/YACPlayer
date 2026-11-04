@@ -4,20 +4,17 @@
 
 This document records the currently known defects, technical debt, performance risks, missing behavior, and work required to run Yacplayer on operating systems other than Windows. It describes the present implementation, not confirmed future commitments.
 
-Priority meanings: **P0** blocks a supported release or risks incorrect behavior; **P1** is important reliability or performance work; **P2** is a functional or maintainability gap; **P3** is a lower-impact improvement.
+Priority meanings: **P0** blocks a supported release or risks incorrect behavior; **P1** is important reliability or performance work; **P2** is a functional or maintainability gap; **P3** is a lower-impact improvement. **Roadmap** describes work outside the currently supported Windows target rather than a Windows-release defect.
 
 ## Summary
 
 | Priority | Area | Current problem | Main consequence |
 |---|---|---|---|
-| P0 | Portability | The application targets `net10.0-windows` and uses WASAPI | Published Linux/macOS binaries are not usable players |
+| Roadmap | Portability | The application targets `net10.0-windows` and uses WASAPI | Published Linux/macOS binaries are not usable players |
 | P1 | Concurrency | The sample ring has unclear ownership of its read cursor | Lost, duplicated, or inconsistent visualization samples are possible |
-| P1 | Playback events | End-of-track handling can mutate playback state outside the UI loop | Races during EOF, track switching, or shutdown |
 | P1 | Spectrum | Partial FFT windows are consumed and then discarded | Flicker, intermittent empty frames, and wasted work |
 | P1 | Rendering | A new cell array and ANSI output are allocated every frame | Avoidable GC and CPU load, especially at 60 FPS |
 | P1 | Library loading | Recursive scans and queue insertion are not incremental | Slow startup/UI stalls and poor scaling for large libraries |
-| P2 | Settings | Saved repeat and shuffle state is not restored into the playlist | Persisted settings do not fully affect runtime behavior |
-| P2 | UI | The fullscreen visualizer setting is exposed but incomplete | The `H` control promises a layout that is not implemented |
 | P3 | Metadata | Metadata is intentionally loaded only for the current track | Unplayed queue entries retain filename/unknown-artist fallbacks |
 | P2 | Browser | Empty and inaccessible folders are not distinguished | Misleading error feedback |
 
@@ -28,12 +25,6 @@ Priority meanings: **P0** blocks a supported release or risks incorrect behavior
 `SampleRingBuffer.Write` may advance `_read` when overwriting old data, while `Read` also advances `_read`. The producer and consumer therefore both write the same cursor. Atomic reads/writes prevent torn values but do not provide a complete single-producer/single-consumer protocol; an interleaving can move the cursor using stale state.
 
 Recommended action: replace it with a proven SPSC design whose producer owns only the write sequence and whose consumer owns only the read sequence. The consumer can clamp its local read position against `write - capacity`. Add sustained concurrent tests with sequence validation, wraparound, overwrite, reset, and shutdown.
-
-### P1 — playback event ownership
-
-NAudio raises `PlaybackStopped` on an audio/event context. The current downstream end-of-track path can change the playlist and replace/dispose audio resources outside the UI loop.
-
-Recommended action: publish bounded `AudioEvent` values to a channel and let the UI loop exclusively perform playlist transitions, track opening, and error presentation. Test natural EOF, manual next/previous near EOF, rapid reopen, device failure, and application shutdown.
 
 ### P1 — lifecycle and device integration coverage
 
@@ -87,8 +78,6 @@ Recommended action: define representative scenarios and capture baselines with `
 
 ## Functional and UI gaps
 
-- **P2 — settings restore:** `PlayerSettings.RepeatMode` and `Shuffle` are saved but not applied to `Playlist` at startup.
-- **P2 — unfinished fullscreen mode:** the fullscreen-visualizer control lacks a dedicated layout. Implement it or remove the control until supported.
 - **P3 — metadata scope:** metadata is loaded only for the current track and applied on the UI loop. Unplayed queue entries intentionally retain lightweight fallback values; bitrate is still unavailable.
 - **P2 — browser diagnostics:** inaccessible directories and empty directories share the same user-facing result. Preserve and display enumeration errors without crashing.
 - **P2 — Unicode layout:** clipping is based on .NET character positions rather than terminal grapheme/display width. Combining marks, emoji, and East Asian wide characters can still misalign borders and columns. Rows containing likely variable-width Unicode are now erased and fully repainted as a low-cost stale-glyph mitigation, but this is not a complete width-aware layout solution.
@@ -98,9 +87,9 @@ Recommended action: define representative scenarios and capture baselines with `
 
 ## Packaging and release gaps
 
-- **P1 — Windows-only installer:** Inno Setup produces only a Windows installer. There are no `.deb`, `.rpm`, AppImage, Homebrew, `.pkg`, or notarized macOS artifacts.
-- **P2 — runtime dependency:** the current Windows distribution is framework-dependent and needs the matching .NET 10 runtime. Consider self-contained packages or a deliberate bootstrap/install flow.
-- **P2 — CI matrix:** there is no cross-platform build, test, packaging, or terminal smoke-test matrix.
+- **Roadmap — non-Windows packages:** Inno Setup produces only a Windows installer. There are no `.deb`, `.rpm`, AppImage, Homebrew, `.pkg`, or notarized macOS artifacts because Linux and macOS are not supported runtimes yet.
+- **P2 — runtime dependency:** the tracked framework-dependent publish and Inno Setup installer need the matching .NET 10 runtime. The Store MSIX and Native AOT publish are self-contained; a self-contained conventional installer or deliberate bootstrap flow remains optional release work.
+- **P2 — CI matrix:** GitHub Actions now runs restore, Release build, and tests on Windows. Cross-platform builds, packaging checks, terminal smoke tests, and real-audio tests are not present.
 - **P2 — release validation:** installer install/uninstall, upgrade, file associations, shortcuts, and clean-machine behavior are not automated.
 - **P3 — repository hygiene:** generated `bin`, `obj`, publish output, IDE profiles, and packaged artifacts must remain clearly separated from source and intentionally ignored or versioned.
 
@@ -147,14 +136,13 @@ A platform should not be marked supported until it can open all documented codec
 
 ## Recommended order of work
 
-1. Fix the ring protocol and route audio events through the UI loop.
+1. Fix the ring protocol.
 2. Correct FFT accumulation/decay and batch callback writes.
 3. Add integration, concurrency, allocation, and soak baselines.
 4. Reuse rendering buffers and make scanning incremental/cancellable.
-5. Finish or hide incomplete settings/UI behavior.
-6. Extract `IAudioEngine` and a platform filesystem service.
-7. Retarget portable code, isolate WASAPI, and add Linux/macOS backends one platform at a time.
-8. Add the OS test matrix and native packaging only after runtime behavior passes on real systems.
+5. Extract `IAudioEngine` and a platform filesystem service.
+6. Retarget portable code, isolate WASAPI, and add Linux/macOS backends one platform at a time.
+7. Add the OS test matrix and native packaging only after runtime behavior passes on real systems.
 
 ---
 
@@ -164,20 +152,17 @@ A platform should not be marked supported until it can open all documented codec
 
 Этот документ фиксирует известные дефекты, технический долг, риски производительности, незавершённые функции и работы, необходимые для запуска Yacplayer не только в Windows. Это описание текущего состояния, а не обещание реализации.
 
-Приоритеты: **P0** блокирует поддерживаемый релиз или несёт риск некорректной работы; **P1** — важная надёжность или производительность; **P2** — функциональный или архитектурный пробел; **P3** — улучшение с меньшим влиянием.
+Приоритеты: **P0** блокирует поддерживаемый релиз или несёт риск некорректной работы; **P1** — важная надёжность или производительность; **P2** — функциональный или архитектурный пробел; **P3** — улучшение с меньшим влиянием. **Roadmap** обозначает работу вне текущей поддерживаемой Windows-платформы, а не дефект Windows-релиза.
 
 ## Краткий список
 
 | Приоритет | Область | Текущая проблема | Последствие |
 |---|---|---|---|
-| P0 | Портируемость | Цель `net10.0-windows`, вывод через WASAPI | Сборки Linux/macOS не являются рабочими плеерами |
+| Roadmap | Портируемость | Цель `net10.0-windows`, вывод через WASAPI | Сборки Linux/macOS не являются рабочими плеерами |
 | P1 | Конкурентность | У курсора чтения кольцевого буфера нет одного владельца | Возможна потеря или несогласованность данных визуализации |
-| P1 | События аудио | Завершение трека может менять состояние вне UI-цикла | Гонки при EOF, переключении и завершении приложения |
 | P1 | Спектр | Неполные FFT-окна считываются и выбрасываются | Мигание, пустые кадры и лишняя работа |
 | P1 | Рендеринг | На каждом кадре создаются массив ячеек и ANSI-строка | Лишние GC и CPU, особенно при 60 FPS |
 | P1 | Медиатека | Сканирование и добавление очереди не потоковые | Медленный запуск и плохое масштабирование |
-| P2 | Настройки | Repeat и shuffle сохраняются, но не восстанавливаются в playlist | Настройки не полностью влияют на запуск |
-| P2 | UI | Полноэкранный визуализатор не завершён | Клавиша `H` обещает отсутствующую компоновку |
 | P3 | Метаданные | Метаданные намеренно читаются только для текущего трека | Незапускавшиеся элементы сохраняют имя файла/Unknown artist |
 | P2 | Браузер | Пустая и недоступная папки не различаются | Ошибочное сообщение пользователю |
 
@@ -188,12 +173,6 @@ A platform should not be marked supported until it can open all documented codec
 `SampleRingBuffer.Write` сдвигает `_read` при вытеснении старых данных, а `Read` сдвигает тот же `_read` после чтения. Атомарность не делает такой протокол корректным: запись устаревшего значения при определённом чередовании потоков возможна.
 
 Решение: проверенная SPSC-схема, где producer владеет только номером записи, consumer — номером чтения, а отставший consumer локально ограничивает позицию значением `write - capacity`. Нужны длительные конкурентные тесты последовательности, переполнения, wraparound, reset и shutdown.
-
-### P1 — владелец событий воспроизведения
-
-NAudio вызывает `PlaybackStopped` в аудио/event-контексте. Текущий путь EOF может менять playlist и заменять/освобождать аудиоресурсы вне UI-цикла.
-
-Решение: передавать ограниченные `AudioEvent` через channel, а playlist, открытие трека и отображение ошибок менять только в UI-цикле. Проверить естественный EOF, next/previous около EOF, быстрое переоткрытие, ошибку устройства и shutdown.
 
 ### P1 — нет интеграционного покрытия жизненного цикла
 
@@ -241,8 +220,6 @@ Delay-based polling добавляет время работы к задержк
 
 ## Функциональные и UI-пробелы
 
-- **P2 — восстановление настроек:** `RepeatMode` и `Shuffle` сохраняются, но не применяются к `Playlist` при запуске.
-- **P2 — незавершённый fullscreen:** отдельная полноэкранная компоновка визуализатора не реализована; её нужно закончить или временно убрать управление `H`.
 - **P3 — область метаданных:** метаданные читаются только для текущего трека и применяются в UI-цикле. Остальные элементы намеренно используют лёгкие fallback-значения; bitrate пока отсутствует.
 - **P2 — диагностика браузера:** access denied должен отличаться от пустой папки и не приводить к падению.
 - **P2 — Unicode:** расчёт по позициям .NET не учитывает grapheme/display width; combining marks, emoji и wide characters всё ещё могут ломать выравнивание. Строки с вероятным Unicode переменной ширины теперь очищаются и полностью перерисовываются как дешёвая защита от оставшихся символов, но это не заменяет полноценный width-aware layout.
@@ -252,9 +229,9 @@ Delay-based polling добавляет время работы к задержк
 
 ## Проблемы упаковки и релиза
 
-- **P1:** Inno Setup предназначен только для Windows; пакетов Linux/macOS нет.
-- **P2:** Windows-дистрибутив framework-dependent и требует .NET 10 runtime; нужен осознанный выбор self-contained либо bootstrap.
-- **P2:** нет cross-platform CI-матрицы build/test/package/terminal smoke.
+- **Roadmap:** Inno Setup предназначен только для Windows; пакетов Linux/macOS нет, поскольку эти платформы пока не являются поддерживаемыми runtime.
+- **P2:** tracked framework-dependent publish и Inno Setup installer требуют .NET 10 runtime. Store MSIX и Native AOT self-contained; self-contained обычный installer или bootstrap остаётся необязательной release-задачей.
+- **P2:** GitHub Actions выполняет restore, Release build и tests на Windows. Cross-platform builds, packaging checks, terminal smoke и real-audio tests отсутствуют.
 - **P2:** install/uninstall/upgrade, shortcuts и clean-machine сценарии не автоматизированы.
 - **P3:** `bin`, `obj`, publish output, IDE profiles и релизные артефакты должны быть явно отделены от исходников и осознанно ignored/versioned.
 
@@ -301,11 +278,10 @@ Yacplayer               composition/CLI
 
 ## Рекомендуемый порядок работ
 
-1. Исправить ring protocol и передавать audio events в UI loop.
+1. Исправить ring protocol.
 2. Исправить FFT accumulation/decay и блочную запись из callback.
 3. Добавить integration, concurrency, allocation и soak baseline.
 4. Переиспользовать render buffers; сделать scan incremental и cancellable.
-5. Закончить или скрыть незавершённые UI/settings.
-6. Выделить `IAudioEngine` и platform filesystem service.
-7. Перенацелить portable code, изолировать WASAPI и реализовывать Linux/macOS по одной платформе.
-8. Добавлять OS test matrix и native packaging после проверки runtime на реальных системах.
+5. Выделить `IAudioEngine` и platform filesystem service.
+6. Перенацелить portable code, изолировать WASAPI и реализовывать Linux/macOS по одной платформе.
+7. Добавлять OS test matrix и native packaging после проверки runtime на реальных системах.
