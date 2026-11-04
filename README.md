@@ -209,7 +209,7 @@ Build the Inno Setup 6 installer:
 & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\Yacplayer.iss
 ```
 
-Output: `artifacts\installer\Yacplayer-1.26.3.11-win-x64-setup.exe`.
+Output: `artifacts\installer\Yacplayer-1.26.5.11-win-x64-setup.exe`.
 
 ## Repository layout
 

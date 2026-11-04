@@ -82,7 +82,7 @@ public sealed record Arguments(
     }
 
     public const string HelpText = """
-Yacplayer 1.26.3.11 - local terminal music player for Windows
+Yacplayer 1.26.5.11 - local terminal music player for Windows
 Usage: yacplayer [path] [--recursive] [--fps 30|60] [--no-visualizer]
 
 Options:

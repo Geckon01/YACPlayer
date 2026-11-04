@@ -209,7 +209,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File packaging\msix\Build-Msix.ps
 & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\Yacplayer.iss
 ```
 
-Результат: `artifacts\installer\Yacplayer-1.26.3.11-win-x64-setup.exe`.
+Результат: `artifacts\installer\Yacplayer-1.26.5.11-win-x64-setup.exe`.
 
 ## Структура репозитория
 

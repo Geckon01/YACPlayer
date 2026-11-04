@@ -4,7 +4,7 @@
 
 ## 1. Purpose and scope
 
-This document describes the architecture that is actually implemented in Yacplayer 1.26.3.11: components, data flow, execution contexts, state, resource ownership, build/release flow, known limitations, and extension points. It is not an aspirational feature list; gaps between the implementation and the intended design are listed explicitly under “Limitations and technical debt.”
+This document describes the architecture that is actually implemented in Yacplayer 1.26.5.11: components, data flow, execution contexts, state, resource ownership, build/release flow, known limitations, and extension points. It is not an aspirational feature list; gaps between the implementation and the intended design are listed explicitly under “Limitations and technical debt.”
 
 The target is Windows x64, `.NET 10`, and `net10.0-windows`. The application ships as one managed executable with framework-dependent DLLs and an optional Inno Setup installer.
 

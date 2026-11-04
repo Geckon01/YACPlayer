@@ -13,7 +13,7 @@ powershell -NoProfile -ExecutionPolicy Bypass `
   -File packaging\msix\Build-Msix.ps1
 ```
 
-The result is `artifacts/msix/Yacplayer-1.26.3.11-win-x64.msix`. It is self-contained. The default identity contains Microsoft's unsigned-package OID and is only for local validation.
+The result is `artifacts/msix/Yacplayer-1.26.5.11-win-x64.msix`. It is self-contained. The default identity contains Microsoft's unsigned-package OID and is only for local validation.
 
 For Store submission:
 
@@ -25,7 +25,7 @@ For Store submission:
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass `
   -File packaging\msix\Build-Msix.ps1 `
-  -UseLocalStoreIdentity -Version 1.26.3.11
+  -UseLocalStoreIdentity -Version 1.26.5.11
 ```
 
 Upload the resulting `.msix` on the submission's Packages page. Microsoft re-signs an accepted MSIX, so no PFX, certificate password, signing token, or private key belongs in this repository. A package distributed outside Microsoft Store must be signed separately.

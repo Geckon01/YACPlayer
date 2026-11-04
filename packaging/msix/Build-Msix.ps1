@@ -4,7 +4,7 @@ param(
     [string] $Publisher = 'CN=Yacplayer Development, OID.2.25.311729368913984317654407730594956997722=1',
     [string] $PublisherDisplayName = 'Yacplayer contributors',
     [ValidatePattern('^\d+\.\d+\.\d+\.\d+$')]
-    [string] $Version = '1.26.3.11',
+    [string] $Version = '1.26.5.11',
     [string] $OutputPath,
     [switch] $UseLocalStoreIdentity
 )

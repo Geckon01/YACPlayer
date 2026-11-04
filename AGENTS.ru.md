@@ -21,7 +21,7 @@
 
 ## Снимок проекта
 
-- Yacplayer 1.26.3.11 — полноэкранный терминальный музыкальный плеер с клавиатурным управлением.
+- Yacplayer 1.26.5.11 — полноэкранный терминальный музыкальный плеер с клавиатурным управлением.
 - Поддерживается только Windows x64.
 - .NET 10, `net10.0-windows`, nullable reference types.
 - NAudio 3.3.0, `AudioFileReader`, WASAPI shared, запрошенная задержка 100 мс.
@@ -250,7 +250,7 @@ Installer собирается после обновления `artifacts/publis
 
 ## Git и гигиена репозитория
 
-- Release-версии состоят ровно из четырёх числовых компонентов `A.B.C.D`. Текущая версия — `1.26.3.11`; каждый Store update должен быть численно больше ранее опубликованной MSIX-версии. При смене версии синхронно обновлять project/assembly metadata, CLI help, installer, MSIX defaults/template и EN/RU документацию.
+- Release-версии состоят ровно из четырёх числовых компонентов `A.B.C.D`. Для date-derived releases используется `1.YY.DD.MM`; текущая версия для 2026-11-05 — `1.26.5.11`. Каждый Store update должен быть численно больше ранее опубликованной MSIX-версии. При смене версии синхронно обновлять project/assembly metadata, CLI help, installer, MSIX defaults/template и EN/RU документацию.
 
 - `github`: `git@github.com:Geckon01/YACPlayer.git`; `origin`: приватный Gitea `https://git.geckon01.ru/geckon01/YacPlayer.git`.
 - 2026-11-03 обе истории были переписаны для удаления случайно добавленного копирайтного тестового аудио. Старые clone/branch нельзя merge/push; их нужно rebase на очищенный `main` или переклонировать.
@@ -265,6 +265,7 @@ Installer собирается после обновления `artifacts/publis
 
 ## Текущая проверка
 
+- Обновление версии 2026-11-05: project/assembly metadata, CLI help, installer, MSIX defaults, regression-проверка и EN/RU документация синхронизированы на date-derived версию `1.26.5.11`. Focused whitespace verification прошла; `dotnet build Yacplayer.sln -c Release --no-restore` завершился с 0 warnings/0 errors, `dotnet test Yacplayer.sln -c Release --no-build` прошёл 29/29 тестов, а `--version` вывел `Yacplayer 1.26.5.11`. Installer, MSIX и tracked publish binaries не пересобирались.
 - Падение single-track shuffle исправлено 2026-11-05: после заполнения исчерпанного shuffle bag `Playlist.Next` обрабатывает всё ещё пустой цикл из одного трека в Repeat All повторным воспроизведением current item вместо вызова `PopBag` с count zero. Добавлено покрытие ручного Next, automatic EOF и неизменного завершения Repeat Off. Focused whitespace verification и regression прошли успешно; `dotnet build Yacplayer.sln -c Release --no-restore` завершился с 0 warnings/0 errors; `dotnet test Yacplayer.sln -c Release --no-build` прошёл 29/29 тестов. Smoke с реальным воспроизведением остаётся невыполненным.
 - Декомпозиция `App` выполнена 2026-11-04: `App.cs` уменьшен с 727 до 418 строк и оставлен composition root, event loop и command router. Browser loading/navigation/deduplication перенесены в `BrowserController`; cancellation/completions metadata текущего трека — в `CurrentTrackMetadataLoader`; координация visualizer/realtime DSP — в `VisualizationPipeline`; все player/browser layouts и viewports — в `AppRenderer`. Для тестов открыт internal boundary и добавлены regression-тесты renderer layouts и browser deduplication. К изменённым source/test files применён `dotnet format Yacplayer.sln whitespace`, `dotnet build Yacplayer.sln -c Release --no-restore` завершился с 0 warnings/0 errors, `dotnet test Yacplayer.sln -c Release --no-build` прошёл 28/28 тестов. Ручной TUI/WASAPI smoke остаётся невыполненным.
 - Панель realtime-аудиоанализа добавлена 2026-11-04: `B` переключает сохраняемую третью нижнюю панель с RMS/peak/crest, zero-crossing rate, spectral centroid, dominant frequency, beat pulse и эвристическими BPM/confidence. Отдельный bounded pre-volume ring записывается только во включённом состоянии, а UI-thread analyzer не вызывается после отключения. Добавлены regression-тесты gating tap, synthetic tone/tempo analysis и persistence настройки. `dotnet format Yacplayer.sln whitespace --include src/Yacplayer/App.cs src/Yacplayer/Audio/AudioEngine.cs src/Yacplayer/Audio/PcmTapSampleProvider.cs src/Yacplayer/Cli/Arguments.cs src/Yacplayer/Configuration/PlayerSettings.cs src/Yacplayer/Dsp/RealtimeAudioAnalyzer.cs --no-restore --verify-no-changes` завершился успешно; `dotnet build Yacplayer.sln -c Release` завершился с 0 warnings/0 errors; `dotnet test Yacplayer.sln -c Release --no-build` прошёл 26/26 тестов. Точность BPM на реальном аудио, WASAPI behavior и TUI layout вручную не проверены.

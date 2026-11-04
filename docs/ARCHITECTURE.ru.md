@@ -4,7 +4,7 @@
 
 ## 1. Назначение документа
 
-Документ описывает фактически реализованную архитектуру Yacplayer 1.26.3.11 на уровне компонентов, данных, потоков исполнения, состояний, resource ownership и build/release pipeline. Он не является списком желаемых функций: отличия текущей реализации от целевой модели перечислены в разделе «Ограничения и технический долг».
+Документ описывает фактически реализованную архитектуру Yacplayer 1.26.5.11 на уровне компонентов, данных, потоков исполнения, состояний, resource ownership и build/release pipeline. Он не является списком желаемых функций: отличия текущей реализации от целевой модели перечислены в разделе «Ограничения и технический долг».
 
 Целевая платформа приложения — Windows x64, `.NET 10`, `net10.0-windows`. Shipping unit — один managed executable с framework-dependent DLL-зависимостями и опциональным Inno Setup installer.
 
@@ -537,7 +537,7 @@ Inno Setup:
 - проверка folder pattern `.NETCore.App\10.*`;
 - bundled README, LICENSE и third-party notices;
 - PDB исключён;
-- output `artifacts/installer/Yacplayer-1.26.3.11-win-x64-setup.exe`.
+- output `artifacts/installer/Yacplayer-1.26.5.11-win-x64-setup.exe`.
 
 ## 22. Security и privacy
 

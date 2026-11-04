@@ -21,7 +21,7 @@ Do not remove or weaken this contract. Its purpose is to let a new agent underst
 
 ## Project snapshot
 
-- Product: Yacplayer 1.26.3.11, a keyboard-operated full-screen terminal music player.
+- Product: Yacplayer 1.26.5.11, a keyboard-operated full-screen terminal music player.
 - Current supported runtime: Windows x64 only.
 - Framework: .NET 10, `net10.0-windows`, nullable reference types enabled.
 - Audio: NAudio 3.3.0, `AudioFileReader`, and WASAPI shared mode with requested 100 ms latency.
@@ -282,7 +282,7 @@ Do not claim Linux/macOS support based on compilation alone.
 
 ## Git and repository hygiene
 
-- Release versions use exactly four numeric components in `A.B.C.D` form. The current version is `1.26.3.11`; every Store update must compare greater than the previously published MSIX version. Synchronize project/assembly metadata, CLI help, installer, MSIX defaults/template, and EN/RU documentation whenever the version changes.
+- Release versions use exactly four numeric components in `A.B.C.D` form. Date-derived releases follow `1.YY.DD.MM`; the current version for 2026-11-05 is `1.26.5.11`. Every Store update must compare greater than the previously published MSIX version. Synchronize project/assembly metadata, CLI help, installer, MSIX defaults/template, and EN/RU documentation whenever the version changes.
 
 - Remotes: `github` is `git@github.com:Geckon01/YACPlayer.git`; `origin` is the private Gitea server at `https://git.geckon01.ru/geckon01/YacPlayer.git`.
 - On 2026-11-03, history on both remotes was rewritten to remove accidentally committed copyrighted test audio. Do not merge or push an old clone/branch based on the pre-rewrite history; rebase onto the sanitized `main` or reclone.
@@ -299,6 +299,7 @@ Local-only caution at the time of this update: `yacplayer-history-backup-2026110
 
 Update this section after every material change.
 
+- Version update on 2026-11-05: synchronized project/assembly metadata, CLI help, installer, MSIX defaults, regression coverage, and EN/RU documentation to the date-derived version `1.26.5.11`. Focused whitespace verification passed; `dotnet build Yacplayer.sln -c Release --no-restore` succeeded with 0 warnings/0 errors, `dotnet test Yacplayer.sln -c Release --no-build` passed 29/29 tests, and `--version` printed `Yacplayer 1.26.5.11`. Installer, MSIX, and tracked publish binaries were not rebuilt.
 - Single-track shuffle crash fixed on 2026-11-05: after refilling an exhausted shuffle bag, `Playlist.Next` now handles the still-empty one-track Repeat All cycle by replaying the current item instead of calling `PopBag` with count zero. Added coverage for manual Next, automatic EOF, and unchanged Repeat Off termination. Focused whitespace verification and the regression passed; `dotnet build Yacplayer.sln -c Release --no-restore` succeeded with 0 warnings/0 errors; `dotnet test Yacplayer.sln -c Release --no-build` passed 29/29 tests. Real playback smoke testing remains pending.
 - `App` decomposition on 2026-11-04: reduced `App.cs` from 727 to 418 lines and left it as composition root, event loop, and command router. Browser loading/navigation/deduplication moved to `BrowserController`; current-track metadata cancellation/completions to `CurrentTrackMetadataLoader`; visualizer/realtime DSP coordination to `VisualizationPipeline`; all player/browser layouts and viewports to `AppRenderer`. Added internal-boundary access for tests plus renderer-layout and browser-deduplication regressions. `dotnet format Yacplayer.sln whitespace` was applied to the changed source/test files, `dotnet build Yacplayer.sln -c Release --no-restore` succeeded with 0 warnings/0 errors, and `dotnet test Yacplayer.sln -c Release --no-build` passed 28/28 tests. Manual TUI/WASAPI smoke testing remains pending.
 - Realtime audio-analysis panel added on 2026-11-04: `B` toggles a persisted third bottom panel containing RMS/peak/crest, zero-crossing rate, spectral centroid, dominant frequency, beat pulse, and heuristic BPM/confidence. A separate bounded pre-volume ring is written only while enabled, and the UI-thread analyzer is not invoked while disabled. Added regression tests for tap gating, synthetic tone/tempo analysis, and settings persistence. `dotnet format Yacplayer.sln whitespace --include src/Yacplayer/App.cs src/Yacplayer/Audio/AudioEngine.cs src/Yacplayer/Audio/PcmTapSampleProvider.cs src/Yacplayer/Cli/Arguments.cs src/Yacplayer/Configuration/PlayerSettings.cs src/Yacplayer/Dsp/RealtimeAudioAnalyzer.cs --no-restore --verify-no-changes` succeeded; `dotnet build Yacplayer.sln -c Release` succeeded with 0 warnings/0 errors; `dotnet test Yacplayer.sln -c Release --no-build` passed 26/26 tests. Real-audio BPM accuracy, WASAPI behavior, and TUI layout remain manually unverified.

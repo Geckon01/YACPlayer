@@ -6,9 +6,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <ApplicationIcon>..\..\assets\Yacplayer.ico</ApplicationIcon>
-    <Version>1.26.3.11</Version>
-    <AssemblyVersion>1.26.3.11</AssemblyVersion>
-    <FileVersion>1.26.3.11</FileVersion>
+    <Version>1.26.5.11</Version>
+    <AssemblyVersion>1.26.5.11</AssemblyVersion>
+    <FileVersion>1.26.5.11</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>

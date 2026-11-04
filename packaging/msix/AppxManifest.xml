@@ -5,7 +5,7 @@
   xmlns:uap5="http://schemas.microsoft.com/appx/manifest/uap/windows10/5"
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
   IgnorableNamespaces="uap uap5 rescap">
-  <Identity Name="Yacplayer.OpenSource" Publisher="CN=Yacplayer Development, OID.2.25.311729368913984317654407730594956997722=1" Version="1.26.3.11" ProcessorArchitecture="x64" />
+  <Identity Name="Yacplayer.OpenSource" Publisher="CN=Yacplayer Development, OID.2.25.311729368913984317654407730594956997722=1" Version="1.26.5.11" ProcessorArchitecture="x64" />
   <Properties>
     <DisplayName>Yacplayer</DisplayName>
     <PublisherDisplayName>Yacplayer contributors</PublisherDisplayName>

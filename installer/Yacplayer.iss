@@ -1,5 +1,5 @@
 #define MyAppName "Yacplayer"
-#define MyAppVersion "1.26.3.11"
+#define MyAppVersion "1.26.5.11"
 #define MyAppPublisher "Yacplayer contributors"
 #define MyAppExeName "Yacplayer.exe"
 
