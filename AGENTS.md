@@ -27,11 +27,11 @@ Do not remove or weaken this contract. Its purpose is to let a new agent underst
 - Audio: NAudio 3.3.0, `AudioFileReader`, and WASAPI shared mode with requested 100 ms latency.
 - UI: custom ANSI/VT alternate-screen renderer; there is no GUI framework.
 - Visualizers: colored FFT spectrum, real-time PCM waveform, and Off; visualization PCM is tapped before output volume/mute.
-- Optional real-time analysis: a separately gated pre-volume PCM tap feeds UI-thread RMS/peak/crest, zero-crossing, spectral centroid/dominant-frequency, beat-pulse, and heuristic BPM/confidence calculation. `B` disables both the panel and this analysis path.
+- Optional real-time analysis: a separately gated pre-volume PCM tap feeds UI-thread RMS/peak/crest, zero-crossing, spectral centroid/dominant-frequency, multi-band spectral-flux onset detection, and multi-hypothesis PLL BPM/phase tracking. `B` disables both the panel and this analysis path.
 - Metadata: ATL 7.19.0, loaded lazily for the current track only.
 - Persistence: per-user JSON at `%LOCALAPPDATA%\Yacplayer\settings.json`.
 - Distribution: framework-dependent win-x64 publish, optional win-x64 Native AOT publish, an Inno Setup 6 installer, and a self-contained x64 MSIX build for Microsoft Store.
-- Automated tests: 29 xUnit tests that avoid real audio hardware.
+- Automated tests: 34 xUnit tests that avoid real audio hardware.
 - License: MIT. The repository and user-facing documentation carry an AI-assisted/generated-code notice.
 - Public documentation is English-first with Russian counterparts.
 
@@ -253,7 +253,7 @@ The detailed backlog is [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md). Keep this 
 - Replace delay-after-work scheduling with monotonic frame deadlines and a lower idle rate.
 - Add input/layout snapshots, concurrent ring stress tests, generated-WAV integration tests, optional WASAPI smoke tests, installer tests, and long-running soak coverage.
 - Calculate/display bitrate if it becomes a supported metadata field; preserve the current lazy-current-track policy unless requirements change.
-- Treat realtime BPM as a heuristic estimate: it needs several seconds and may select half/double tempo; improve onset filtering and multi-hypothesis tracking before using it for synchronization.
+- Treat realtime BPM as a heuristic estimate: the spectral-flux/PLL tracker needs several seconds and may select a different metrical level; validate it on a representative real-music corpus and measure CPU cost before using it for synchronization.
 - Reformat dense one-line code in the remaining domain classes and tests when doing so can remain a reviewable style-only change.
 
 ## Platform status and portability
@@ -299,6 +299,7 @@ Local-only caution at the time of this update: `yacplayer-history-backup-2026110
 
 Update this section after every material change.
 
+- Predictive BPM tracker added on 2026-11-05: replaced broadband RMS-difference tempo detection with a 1024-sample/256-hop multi-band spectral-flux onset envelope, interpolated 55–200 BPM autocorrelation candidates, phase coverage scoring, and a bounded eight-agent PLL bank with confidence decay and switching hysteresis. The Beat indicator now follows predicted phase and survives short missing-beat sections. Added synthetic coverage for 97/127/173 BPM grid refinement, missing beats, and a 120→150 BPM change. Focused whitespace verification succeeded; Release build completed with 0 warnings/0 errors and all 34/34 tests passed. Accuracy, lock behavior, and CPU cost on a representative real-music corpus remain manually unverified; release binaries were not rebuilt.
 - Installer release refresh on 2026-11-05: republished the framework-dependent win-x64 application into `artifacts/publish/`, confirmed `Yacplayer.exe --version` reports `1.26.5.11`, and compiled `artifacts/installer/Yacplayer-1.26.5.11-win-x64-setup.exe` successfully with Inno Setup 6.7.1. The installer is 3,242,417 bytes with SHA-256 `6E8E56BD884ABC417EBFE49372582E5802A3A645A206F09763AA316B9DF57902`; `dotnet test Yacplayer.sln -c Release --no-build` passed 29/29 tests. Installation, upgrade, and uninstallation smoke testing remain pending.
 - Version update on 2026-11-05: synchronized project/assembly metadata, CLI help, installer, MSIX defaults, regression coverage, and EN/RU documentation to the date-derived version `1.26.5.11`. Focused whitespace verification passed; `dotnet build Yacplayer.sln -c Release --no-restore` succeeded with 0 warnings/0 errors, `dotnet test Yacplayer.sln -c Release --no-build` passed 29/29 tests, and `--version` printed `Yacplayer 1.26.5.11`. Installer, MSIX, and tracked publish binaries were not rebuilt.
 - Single-track shuffle crash fixed on 2026-11-05: after refilling an exhausted shuffle bag, `Playlist.Next` now handles the still-empty one-track Repeat All cycle by replaying the current item instead of calling `PopBag` with count zero. Added coverage for manual Next, automatic EOF, and unchanged Repeat Off termination. Focused whitespace verification and the regression passed; `dotnet build Yacplayer.sln -c Release --no-restore` succeeded with 0 warnings/0 errors; `dotnet test Yacplayer.sln -c Release --no-build` passed 29/29 tests. Real playback smoke testing remains pending.

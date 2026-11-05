@@ -22,7 +22,7 @@ Implemented:
 - cancellable background directory loading that keeps the TUI responsive, plus hash-based deduplication and batch queue insertion for large folders;
 - adaptive ANSI/VT interface with colored panels, white captions on green title backgrounds, the current version in the top-right header, and differential rendering with full-row refresh for variable-width Unicode;
 - switchable Hann-windowed FFT spectrum with a smooth true-color green/yellow/red gradient, `.` waveform, and disabled visualizer modes; spectrum and waveform amplitude are independent of output volume and mute;
-- optional realtime audio-analysis panel with estimated BPM/beat confidence, rhythm pulse, RMS/peak/crest levels, zero-crossing rate, spectral centroid, and dominant frequency; its PCM tap and calculations stop when disabled;
+- optional realtime audio-analysis panel with multi-band onset detection, PLL-tracked BPM/beat confidence and a predictive rhythm pulse, plus RMS/peak/crest levels, zero-crossing rate, spectral centroid, and dominant frequency; its PCM tap and calculations stop when disabled;
 - per-user JSON settings;
 - CLI, Release publishing, and an Inno Setup installer;
 - reproducible self-contained MSIX packaging for Microsoft Store submission;
@@ -33,7 +33,7 @@ Known limitations:
 - ATL metadata is loaded lazily only for the current track; entries that have never played retain filename/`Unknown artist` fallbacks, and bitrate is not calculated;
 - interactive queue search, mouse input, OGG, and Opus are not implemented;
 - actual WASAPI and codec behavior still requires manual verification on a machine with an audio device.
-- BPM is a realtime signal estimate rather than embedded metadata; it needs several seconds to stabilize and may choose a half/double tempo for rhythmically ambiguous material.
+- BPM is a realtime signal estimate rather than embedded metadata. The multi-hypothesis tracker needs several seconds to lock and can still choose a different metrical level for syncopated, changing, or rhythmically ambiguous material.
 
 ## Requirements
 

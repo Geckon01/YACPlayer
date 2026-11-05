@@ -15,7 +15,7 @@ Priority meanings: **P0** blocks a supported release or risks incorrect behavior
 | P1 | Spectrum | Partial FFT windows are consumed and then discarded | Flicker, intermittent empty frames, and wasted work |
 | P1 | Rendering | A new cell array and ANSI output are allocated every frame | Avoidable GC and CPU load, especially at 60 FPS |
 | P1 | Library loading | Startup and `A` recursive scans still materialize the full result | Slow startup or a temporarily unresponsive UI on very large trees |
-| P2 | Realtime analysis | Tempo is inferred from a short energy-onset history | Several-second learning time and possible half/double BPM |
+| P2 | Realtime analysis | The causal multi-hypothesis tracker is not validated on a representative music corpus | Several-second lock time and possible metrical-level errors remain |
 | P3 | Metadata | Metadata is intentionally loaded only for the current track | Unplayed queue entries retain filename/unknown-artist fallbacks |
 | P2 | Browser | Empty and inaccessible folders are not distinguished | Misleading error feedback |
 
@@ -80,7 +80,7 @@ Recommended action: define representative scenarios and capture baselines with `
 ## Functional and UI gaps
 
 - **P3 — metadata scope:** metadata is loaded only for the current track and applied on the UI loop. Unplayed queue entries intentionally retain lightweight fallback values; bitrate is still unavailable.
-- **P2 — tempo estimate:** the Realtime Audio panel derives BPM from bounded short-time energy and autocorrelation rather than reading authoritative metadata or running a full beat tracker. It needs several seconds of active playback and can select a half/double tempo for syncopated, changing, or weak rhythms. Keep the UI labelled as an estimate; improve onset filtering and multi-hypothesis tracking before using it for synchronization.
+- **P2 — tempo estimate:** the Realtime Audio panel now uses multi-band spectral flux, interpolated autocorrelation, phase scoring, and a bounded bank of PLL tempo/phase agents. Synthetic constant-tempo, missing-beat, and tempo-change coverage exists, but no representative real-music corpus or synchronization-grade accuracy baseline does. It still needs several seconds of active playback and may choose a different metrical level for syncopated, changing, or weak rhythms. Keep the UI labelled as an estimate; validate accuracy and CPU cost before using it for synchronization.
 - **P2 — browser diagnostics:** inaccessible directories and empty directories share the same user-facing result. Preserve and display enumeration errors without crashing.
 - **P2 — Unicode layout:** clipping is based on .NET character positions rather than terminal grapheme/display width. Combining marks, emoji, and East Asian wide characters can still misalign borders and columns. Rows containing likely variable-width Unicode are now erased and fully repainted as a low-cost stale-glyph mitigation, but this is not a complete width-aware layout solution.
 - **P3 — format support contract:** the browser extension allowlist and the actual decoder capabilities can diverge. Each advertised format needs decoder verification and an intelligible open-error path.
@@ -164,7 +164,7 @@ A platform should not be marked supported until it can open all documented codec
 | P1 | Спектр | Неполные FFT-окна считываются и выбрасываются | Мигание, пустые кадры и лишняя работа |
 | P1 | Рендеринг | На каждом кадре создаются массив ячеек и ANSI-строка | Лишние GC и CPU, особенно при 60 FPS |
 | P1 | Медиатека | Startup и recursive scan по `A` всё ещё материализуют полный результат | Медленный запуск или временно неотзывчивый UI на очень больших деревьях |
-| P2 | Realtime-анализ | Темп выводится из короткой истории energy onsets | Несколько секунд обучения и возможный половинный/двойной BPM |
+| P2 | Realtime-анализ | Causal multi-hypothesis tracker не проверен на репрезентативном музыкальном корпусе | Сохраняются несколько секунд захвата и возможные ошибки метрического уровня |
 | P3 | Метаданные | Метаданные намеренно читаются только для текущего трека | Незапускавшиеся элементы сохраняют имя файла/Unknown artist |
 | P2 | Браузер | Пустая и недоступная папки не различаются | Ошибочное сообщение пользователю |
 
@@ -223,7 +223,7 @@ Delay-based polling добавляет время работы к задержк
 ## Функциональные и UI-пробелы
 
 - **P3 — область метаданных:** метаданные читаются только для текущего трека и применяются в UI-цикле. Остальные элементы намеренно используют лёгкие fallback-значения; bitrate пока отсутствует.
-- **P2 — оценка темпа:** панель Realtime Audio получает BPM из ограниченной истории short-time energy и autocorrelation, а не из авторитетных metadata и не через полноценный beat tracker. Ей нужно несколько секунд активного воспроизведения; для синкопированного, меняющегося или слабого ритма возможен половинный/двойной темп. UI должен обозначать значение как оценку; для синхронизации понадобятся улучшенные onset filtering и multi-hypothesis tracking.
+- **P2 — оценка темпа:** панель Realtime Audio теперь использует multi-band spectral flux, interpolated autocorrelation, phase scoring и ограниченный банк PLL tempo/phase agents. Есть synthetic coverage для постоянного темпа, пропущенных ударов и смены темпа, но нет репрезентативного корпуса реальной музыки и baseline точности уровня синхронизации. По-прежнему нужно несколько секунд активного воспроизведения, а синкопированный, меняющийся или слабый ритм может привести к выбору другого метрического уровня. UI должен обозначать значение как оценку; перед использованием для синхронизации нужно проверить точность и CPU cost.
 - **P2 — диагностика браузера:** access denied должен отличаться от пустой папки и не приводить к падению.
 - **P2 — Unicode:** расчёт по позициям .NET не учитывает grapheme/display width; combining marks, emoji и wide characters всё ещё могут ломать выравнивание. Строки с вероятным Unicode переменной ширины теперь очищаются и полностью перерисовываются как дешёвая защита от оставшихся символов, но это не заменяет полноценный width-aware layout.
 - **P3 — контракт форматов:** расширения браузера и реальные возможности decoder могут расходиться; каждый заявленный формат требует проверки.

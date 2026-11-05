@@ -296,7 +296,11 @@ UI не получает decoder/output напрямую. `PlaybackSnapshot` с�
 - tap не выполняет FFT, tempo estimation, logging, JSON, metadata или terminal I/O;
 - `AudioEngine.SetRealtimeAnalysis(false)` прекращает запись во второй ring и меняет transport generation; `App` прекращает вызывать `RealtimeAudioAnalyzer` и скрывает панель.
 
-`RealtimeAudioAnalyzer` выполняется в UI-loop. Из ограниченных окон он получает RMS и peak dBFS, crest factor, zero-crossing rate, spectral centroid и dominant frequency. История short-time energy onsets даёт beat pulse и autocorrelation-оценку 60–200 BPM после нескольких секунд сигнала. Это лёгкая realtime-оценка, а не embedded BPM metadata или production beat tracker; неоднозначный ритм может дать половинный/двойной темп.
+`RealtimeAudioAnalyzer` выполняется в UI-loop. Из ограниченных окон он получает RMS и peak dBFS, crest factor, zero-crossing rate, spectral centroid и dominant frequency. Для анализа темпа используется Hann STFT на 1024 samples с hop 256 samples. Положительный прирост log-magnitude усредняется по низкому, среднему и высокому диапазонам и нормализуется относительно адаптивного baseline spectral flux, формируя onset envelope.
+
+`BeatTracker` хранит ограниченную историю onsets. Normalized autocorrelation ищет 55–200 BPM, parabolic peak interpolation устраняет квантование по целому hop, а phase scoring штрафует гипотезы, предсказывающие неподтверждённые доли или объясняющие слишком малую часть onset energy. Одновременно сохраняется до восьми tempo/phase agents. Выраженные onsets корректируют каждый agent через proportional/integral PLL; evidence decay, confidence, continuity bias и switching hysteresis выбирают активный agent. Отображаемый beat строится из предсказанной phase, поэтому продолжается через короткие пропуски ударов, а не просто повторяет energy transient. Широкий prior предпочитает распространённые метрические уровни около 120 BPM, сохраняя кандидатов во всём диапазоне.
+
+Результат остаётся causal realtime-оценкой, а не embedded BPM metadata или offline-анализом всего трека. Для захвата требуется несколько секунд; стабильность намеренно приоритетнее мгновенной реакции, а синкопированный, меняющийся или неоднозначный материал всё ещё может привести к выбору другого метрического уровня.
 
 `SampleRingBuffer` имеет фиксированный `float[]`, monotonically increasing `_write`/`_read` counters и modulo addressing.
 

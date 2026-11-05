@@ -31,29 +31,35 @@ public readonly record struct RealtimeAudioSnapshot(
 
 public sealed class RealtimeAudioAnalyzer
 {
-    private const int FftSize = 2048;
-    private const int EnergyFrameSize = 1024;
-    private const int MaxOnsetFrames = 1024;
+    private const int MetricsFftSize = 2048;
+    private const int OnsetFftSize = 1024;
+    private const int OnsetHopSize = 256;
+
     private readonly SampleRingBuffer _ring;
     private readonly float[] _readBuffer = new float[8192];
-    private readonly float[] _sampleWindow = new float[FftSize];
-    private readonly float[] _orderedSamples = new float[FftSize];
-    private readonly Complex[] _fft = new Complex[FftSize];
-    private readonly double[] _hann = Enumerable.Range(0, FftSize)
-        .Select(index => 0.5 - 0.5 * Math.Cos(2 * Math.PI * index / (FftSize - 1)))
-        .ToArray();
-    private readonly FastFourierTransform _transform = new(FftSize);
-    private readonly List<float> _onsets = new(MaxOnsetFrames);
+    private readonly float[] _sampleWindow = new float[MetricsFftSize];
+    private readonly float[] _orderedSamples = new float[MetricsFftSize];
+    private readonly Complex[] _metricsFft = new Complex[MetricsFftSize];
+    private readonly double[] _metricsHann = CreateHannWindow(MetricsFftSize);
+    private readonly FastFourierTransform _metricsTransform = new(MetricsFftSize);
+    private readonly float[] _onsetWindow = new float[OnsetFftSize];
+    private readonly Complex[] _onsetFft = new Complex[OnsetFftSize];
+    private readonly float[] _previousMagnitudes = new float[OnsetFftSize / 2];
+    private readonly double[] _onsetHann = CreateHannWindow(OnsetFftSize);
+    private readonly FastFourierTransform _onsetTransform = new(OnsetFftSize);
+    private readonly BeatTracker _beatTracker = new();
+
     private int _sampleRate;
     private int _windowWrite;
     private int _windowCount;
-    private double _energySum;
-    private int _energyCount;
-    private float _previousEnergy;
-    private int _beatHoldFrames;
-    private int _framesSinceBpmEstimate;
-    private float _bpm;
-    private float _beatConfidence;
+    private int _onsetWindowWrite;
+    private int _onsetWindowCount;
+    private int _samplesSinceOnsetFrame;
+    private long _processedSamples;
+    private bool _hasPreviousSpectrum;
+    private bool _fluxBaselineInitialized;
+    private double _fluxMean;
+    private double _fluxDeviation;
     private RealtimeAudioSnapshot _last = RealtimeAudioSnapshot.Empty;
 
     public RealtimeAudioAnalyzer(SampleRingBuffer ring)
@@ -82,7 +88,7 @@ public sealed class RealtimeAudioAnalyzer
             ProcessSamples(_readBuffer.AsSpan(0, read));
         }
 
-        if (!receivedSamples || _windowCount < FftSize)
+        if (!receivedSamples || _windowCount < MetricsFftSize)
         {
             return receivedSamples
                 ? RealtimeAudioSnapshot.Empty
@@ -98,18 +104,22 @@ public sealed class RealtimeAudioAnalyzer
         _ring.Reset();
         Array.Clear(_sampleWindow);
         Array.Clear(_orderedSamples);
-        Array.Clear(_fft);
-        _onsets.Clear();
+        Array.Clear(_metricsFft);
+        Array.Clear(_onsetWindow);
+        Array.Clear(_onsetFft);
+        Array.Clear(_previousMagnitudes);
+        _beatTracker.Reset();
         _sampleRate = 0;
         _windowWrite = 0;
         _windowCount = 0;
-        _energySum = 0;
-        _energyCount = 0;
-        _previousEnergy = 0;
-        _beatHoldFrames = 0;
-        _framesSinceBpmEstimate = 0;
-        _bpm = 0;
-        _beatConfidence = 0;
+        _onsetWindowWrite = 0;
+        _onsetWindowCount = 0;
+        _samplesSinceOnsetFrame = 0;
+        _processedSamples = 0;
+        _hasPreviousSpectrum = false;
+        _fluxBaselineInitialized = false;
+        _fluxMean = 0;
+        _fluxDeviation = 0;
         _last = RealtimeAudioSnapshot.Empty;
     }
 
@@ -118,123 +128,110 @@ public sealed class RealtimeAudioAnalyzer
         foreach (var sample in samples)
         {
             _sampleWindow[_windowWrite] = sample;
-            _windowWrite = (_windowWrite + 1) % FftSize;
-            _windowCount = Math.Min(FftSize, _windowCount + 1);
+            _windowWrite = (_windowWrite + 1) % MetricsFftSize;
+            _windowCount = Math.Min(MetricsFftSize, _windowCount + 1);
 
-            _energySum += sample * sample;
-            _energyCount++;
-            if (_energyCount == EnergyFrameSize)
+            _onsetWindow[_onsetWindowWrite] = sample;
+            _onsetWindowWrite = (_onsetWindowWrite + 1) % OnsetFftSize;
+            _onsetWindowCount = Math.Min(OnsetFftSize, _onsetWindowCount + 1);
+            _samplesSinceOnsetFrame++;
+            _processedSamples++;
+
+            if (_onsetWindowCount == OnsetFftSize &&
+                _samplesSinceOnsetFrame >= OnsetHopSize)
             {
-                AddEnergyFrame((float)Math.Sqrt(_energySum / EnergyFrameSize));
-                _energySum = 0;
-                _energyCount = 0;
+                _samplesSinceOnsetFrame = 0;
+                ProcessOnsetFrame();
             }
         }
     }
 
-    private void AddEnergyFrame(float energy)
+    private void ProcessOnsetFrame()
     {
-        var onset = Math.Max(0, energy - _previousEnergy);
-        _previousEnergy = energy;
-
-        var averageCount = Math.Min(32, _onsets.Count);
-        double recentAverage = 0;
-        for (var index = _onsets.Count - averageCount; index < _onsets.Count; index++)
+        for (var index = 0; index < OnsetFftSize; index++)
         {
-            recentAverage += _onsets[index];
+            var sample = _onsetWindow[(_onsetWindowWrite + index) % OnsetFftSize];
+            _onsetFft[index] = new Complex(sample * _onsetHann[index], 0);
         }
 
-        if (averageCount > 0)
+        _onsetTransform.Forward(_onsetFft);
+
+        double lowFlux = 0;
+        double midFlux = 0;
+        double highFlux = 0;
+        var lowBins = 0;
+        var midBins = 0;
+        var highBins = 0;
+
+        for (var bin = 1; bin < OnsetFftSize / 2; bin++)
         {
-            recentAverage /= averageCount;
+            var frequency = bin * (double)_sampleRate / OnsetFftSize;
+            if (frequency > 10000)
+            {
+                break;
+            }
+
+            var magnitude = (float)Math.Log(1 + _onsetFft[bin].Magnitude);
+            var difference = _hasPreviousSpectrum
+                ? Math.Max(0, magnitude - _previousMagnitudes[bin])
+                : 0;
+            _previousMagnitudes[bin] = magnitude;
+
+            if (frequency < 180)
+            {
+                lowFlux += difference;
+                lowBins++;
+            }
+            else if (frequency < 2500)
+            {
+                midFlux += difference;
+                midBins++;
+            }
+            else
+            {
+                highFlux += difference;
+                highBins++;
+            }
         }
 
-        if (onset > Math.Max(0.004, recentAverage * 2.5))
-        {
-            _beatHoldFrames = 5;
-        }
-        else if (_beatHoldFrames > 0)
-        {
-            _beatHoldFrames--;
-        }
-
-        _onsets.Add(onset);
-        if (_onsets.Count > MaxOnsetFrames)
-        {
-            _onsets.RemoveRange(0, _onsets.Count - MaxOnsetFrames);
-        }
-
-        _framesSinceBpmEstimate++;
-        var estimateInterval = Math.Max(1, (int)Math.Round(_sampleRate / (double)EnergyFrameSize / 2));
-        if (_framesSinceBpmEstimate >= estimateInterval)
-        {
-            _framesSinceBpmEstimate = 0;
-            EstimateTempo();
-        }
+        _hasPreviousSpectrum = true;
+        var rawFlux = 0.45 * Average(lowFlux, lowBins) +
+                      0.4 * Average(midFlux, midBins) +
+                      0.15 * Average(highFlux, highBins);
+        var onset = NormalizeFlux(rawFlux);
+        var frameCenterSample = _processedSamples - OnsetFftSize / 2L;
+        _beatTracker.AddFrame(onset, frameCenterSample, _sampleRate, OnsetHopSize);
     }
 
-    private void EstimateTempo()
+    private float NormalizeFlux(double rawFlux)
     {
-        var frameRate = _sampleRate / (double)EnergyFrameSize;
-        var historyCount = Math.Min(_onsets.Count, (int)Math.Ceiling(frameRate * 12));
-        if (historyCount < frameRate * 4)
+        if (!_fluxBaselineInitialized)
         {
-            _bpm = 0;
-            _beatConfidence = 0;
-            return;
+            _fluxBaselineInitialized = true;
+            _fluxMean = rawFlux;
+            _fluxDeviation = Math.Max(rawFlux * 0.5, 1e-5);
+            return 0;
         }
 
-        var start = _onsets.Count - historyCount;
-        double mean = 0;
-        for (var index = start; index < _onsets.Count; index++)
-        {
-            mean += _onsets[index];
-        }
-
-        mean /= historyCount;
-        var minimumLag = Math.Max(1, (int)Math.Floor(frameRate * 60 / 200));
-        var maximumLag = Math.Min(historyCount / 2, (int)Math.Ceiling(frameRate * 60 / 60));
-        var bestLag = 0;
-        double bestCorrelation = 0;
-
-        for (var lag = minimumLag; lag <= maximumLag; lag++)
-        {
-            double correlation = 0;
-            double leftEnergy = 0;
-            double rightEnergy = 0;
-            for (var index = lag; index < historyCount; index++)
-            {
-                var left = _onsets[start + index] - mean;
-                var right = _onsets[start + index - lag] - mean;
-                correlation += left * right;
-                leftEnergy += left * left;
-                rightEnergy += right * right;
-            }
-
-            var denominator = Math.Sqrt(leftEnergy * rightEnergy);
-            var normalized = denominator <= 1e-12 ? 0 : correlation / denominator;
-            if (normalized > bestCorrelation)
-            {
-                bestCorrelation = normalized;
-                bestLag = lag;
-            }
-        }
-
-        _bpm = bestLag == 0 ? 0 : (float)(60 * frameRate / bestLag);
-        _beatConfidence = (float)Math.Clamp(bestCorrelation, 0, 1);
+        var deviation = Math.Max(_fluxDeviation, 1e-5);
+        var normalized = Math.Clamp((rawFlux - _fluxMean) / deviation - 0.5, 0, 8);
+        var meanRate = rawFlux > _fluxMean ? 0.012 : 0.045;
+        _fluxMean += (rawFlux - _fluxMean) * meanRate;
+        _fluxDeviation += (Math.Abs(rawFlux - _fluxMean) - _fluxDeviation) * 0.035;
+        return (float)normalized;
     }
 
     private RealtimeAudioSnapshot CalculateSnapshot()
     {
-        for (var index = 0; index < FftSize; index++)
+        for (var index = 0; index < MetricsFftSize; index++)
         {
-            _orderedSamples[index] = _sampleWindow[(_windowWrite + index) % FftSize];
+            _orderedSamples[index] = _sampleWindow[(_windowWrite + index) % MetricsFftSize];
         }
 
         double squareSum = 0;
         float peak = 0;
         var crossings = 0;
-        for (var index = 0; index < FftSize; index++)
+        for (var index = 0; index < MetricsFftSize; index++)
         {
             var sample = _orderedSamples[index];
             squareSum += sample * sample;
@@ -244,20 +241,20 @@ public sealed class RealtimeAudioAnalyzer
                 crossings++;
             }
 
-            _fft[index] = new Complex(sample * _hann[index], 0);
+            _metricsFft[index] = new Complex(sample * _metricsHann[index], 0);
         }
 
-        _transform.Forward(_fft);
+        _metricsTransform.Forward(_metricsFft);
 
         double magnitudeSum = 0;
         double weightedFrequency = 0;
         double dominantMagnitude = 0;
         var dominantFrequency = 0d;
-        var minimumBin = Math.Max(1, (int)Math.Ceiling(40d * FftSize / _sampleRate));
-        for (var bin = minimumBin; bin < FftSize / 2; bin++)
+        var minimumBin = Math.Max(1, (int)Math.Ceiling(40d * MetricsFftSize / _sampleRate));
+        for (var bin = minimumBin; bin < MetricsFftSize / 2; bin++)
         {
-            var magnitude = _fft[bin].Magnitude;
-            var frequency = bin * (double)_sampleRate / FftSize;
+            var magnitude = _metricsFft[bin].Magnitude;
+            var frequency = bin * (double)_sampleRate / MetricsFftSize;
             magnitudeSum += magnitude;
             weightedFrequency += magnitude * frequency;
             if (magnitude > dominantMagnitude)
@@ -267,20 +264,26 @@ public sealed class RealtimeAudioAnalyzer
             }
         }
 
-        var rms = Math.Sqrt(squareSum / FftSize);
+        var rms = Math.Sqrt(squareSum / MetricsFftSize);
         var crest = rms <= 1e-12 ? 0 : 20 * Math.Log10(peak / rms);
         return new RealtimeAudioSnapshot(
             true,
             ToDbfs(rms),
             ToDbfs(peak),
             (float)Math.Clamp(crest, 0, 60),
-            crossings / (float)(FftSize - 1),
+            crossings / (float)(MetricsFftSize - 1),
             magnitudeSum <= 1e-12 ? 0 : (float)(weightedFrequency / magnitudeSum),
             (float)dominantFrequency,
-            _bpm,
-            _beatConfidence,
-            _beatHoldFrames > 0);
+            _beatTracker.Bpm,
+            _beatTracker.Confidence,
+            _beatTracker.BeatDetected);
     }
+
+    private static double Average(double value, int count) => count == 0 ? 0 : value / count;
+
+    private static double[] CreateHannWindow(int size) => Enumerable.Range(0, size)
+        .Select(index => 0.5 - 0.5 * Math.Cos(2 * Math.PI * index / (size - 1)))
+        .ToArray();
 
     private static float ToDbfs(double amplitude) =>
         (float)Math.Max(-90, 20 * Math.Log10(Math.Max(amplitude, 1e-12)));

@@ -59,6 +59,66 @@ public class DspAndMetadataTests
         Assert.True(snapshot.BeatConfidence > 0.3f);
         Assert.InRange(snapshot.PeakDbfs, -30, 0);
     }
+
+    [Theory]
+    [InlineData(97)]
+    [InlineData(127)]
+    [InlineData(173)]
+    public void BeatTrackerRefinesTempoBeyondTheOnsetFrameGrid(double expectedBpm)
+    {
+        const int sampleRate = 48000;
+        var ring = new SampleRingBuffer(65536);
+        var analyzer = new RealtimeAudioAnalyzer(ring);
+
+        var snapshot = FeedClickTrack(ring, analyzer, sampleRate, expectedBpm, 14);
+
+        Assert.InRange(snapshot.Bpm, expectedBpm - 1.25, expectedBpm + 1.25);
+        Assert.True(snapshot.BeatConfidence >= 0.35f);
+    }
+
+    [Fact]
+    public void BeatTrackerKeepsPredictingThroughShortMissingBeatSection()
+    {
+        const int sampleRate = 48000;
+        const int hopSize = 256;
+        var ring = new SampleRingBuffer(65536);
+        var analyzer = new RealtimeAudioAnalyzer(ring);
+        var snapshot = FeedClickTrack(ring, analyzer, sampleRate, 120, 12);
+        var predictedBeats = 0;
+        var wasBeat = snapshot.BeatDetected;
+
+        for (var offset = 0; offset < sampleRate * 3 / 2; offset += hopSize)
+        {
+            ring.Write(new float[Math.Min(hopSize, sampleRate * 3 / 2 - offset)]);
+            snapshot = analyzer.Analyze(sampleRate);
+            if (snapshot.BeatDetected && !wasBeat)
+            {
+                predictedBeats++;
+            }
+
+            wasBeat = snapshot.BeatDetected;
+        }
+
+        Assert.InRange(snapshot.Bpm, 118.5, 121.5);
+        Assert.True(snapshot.BeatConfidence >= 0.2f);
+        Assert.InRange(predictedBeats, 2, 4);
+    }
+
+    [Fact]
+    public void BeatTrackerRelocksAfterARealTempoChange()
+    {
+        const int sampleRate = 48000;
+        var ring = new SampleRingBuffer(65536);
+        var analyzer = new RealtimeAudioAnalyzer(ring);
+
+        var before = FeedClickTrack(ring, analyzer, sampleRate, 120, 8);
+        var after = FeedClickTrack(ring, analyzer, sampleRate, 150, 14);
+
+        Assert.InRange(before.Bpm, 118.5, 121.5);
+        Assert.InRange(after.Bpm, 148, 152);
+        Assert.True(after.BeatConfidence >= 0.3f);
+    }
+
     [Fact] public async Task MetadataUsesFallbacksForMissingFile()
     {
         var path=System.IO.Path.Combine(System.IO.Path.GetTempPath(),Guid.NewGuid()+".mp3");
@@ -91,5 +151,43 @@ public class DspAndMetadataTests
         {
             var count = Math.Min(buffer.Length, samples.Length - _position); samples.AsSpan(_position, count).CopyTo(buffer); _position += count; return count;
         }
+    }
+
+    private static RealtimeAudioSnapshot FeedClickTrack(
+        SampleRingBuffer ring,
+        RealtimeAudioAnalyzer analyzer,
+        int sampleRate,
+        double bpm,
+        double durationSeconds)
+    {
+        const int chunkSize = 256;
+        var sampleCount = (int)Math.Round(sampleRate * durationSeconds);
+        var beatPeriod = sampleRate * 60 / bpm;
+        var clickLength = Math.Max(1, sampleRate / 100);
+        var snapshot = RealtimeAudioSnapshot.Empty;
+
+        for (var offset = 0; offset < sampleCount; offset += chunkSize)
+        {
+            var samples = new float[Math.Min(chunkSize, sampleCount - offset)];
+            for (var index = 0; index < samples.Length; index++)
+            {
+                var position = offset + index;
+                var phase = position - Math.Floor(position / beatPeriod) * beatPeriod;
+                if (phase >= clickLength)
+                {
+                    continue;
+                }
+
+                var envelope = Math.Exp(-phase / (sampleRate * 0.0025));
+                samples[index] = (float)(envelope * (
+                    0.7 * Math.Sin(2 * Math.PI * 1200 * phase / sampleRate) +
+                    0.3 * Math.Sin(2 * Math.PI * 80 * phase / sampleRate)));
+            }
+
+            ring.Write(samples);
+            snapshot = analyzer.Analyze(sampleRate);
+        }
+
+        return snapshot;
     }
 }
