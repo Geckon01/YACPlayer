@@ -81,6 +81,7 @@ Do not remove or weaken this contract. Its purpose is to let a new agent underst
 - `V` cycles Spectrum → Waveform → Off. Switching mode resets visualization backlog, and FFT is not calculated in Waveform or Off modes.
 - The waveform draws a normalized min/max envelope with green `.` characters. The dot glyph is the current intentional design.
 - `B` toggles the persisted Realtime Audio panel in sufficiently wide layouts. When off, the secondary tap stops writing and the level/spectral/tempo analyzer is not invoked.
+- The Realtime Audio `Beat` row renders the predictive pulse as an ASCII cat: `=^o.o^=` on the beat and `=^-.-^=` between beats.
 
 ### Metadata and settings
 
@@ -299,6 +300,7 @@ Local-only caution at the time of this update: `yacplayer-history-backup-2026110
 
 Update this section after every material change.
 
+- Beat-cat easter egg added on 2026-11-05: the Realtime Audio beat row now alternates between `=^o.o^=` on the predicted beat and `=^-.-^=` between beats. Renderer coverage asserts both states. Focused whitespace verification succeeded; Release build completed with 0 warnings/0 errors and all 34/34 tests passed. Manual in-terminal rhythm timing remains unverified; the change is intentionally left uncommitted at the user's request.
 - Predictive BPM tracker added on 2026-11-05: replaced broadband RMS-difference tempo detection with a 1024-sample/256-hop multi-band spectral-flux onset envelope, interpolated 55–200 BPM autocorrelation candidates, phase coverage scoring, and a bounded eight-agent PLL bank with confidence decay and switching hysteresis. The Beat indicator now follows predicted phase and survives short missing-beat sections. Added synthetic coverage for 97/127/173 BPM grid refinement, missing beats, and a 120→150 BPM change. Focused whitespace verification succeeded; Release build completed with 0 warnings/0 errors and all 34/34 tests passed. Accuracy, lock behavior, and CPU cost on a representative real-music corpus remain manually unverified; release binaries were not rebuilt.
 - Installer release refresh on 2026-11-05: republished the framework-dependent win-x64 application into `artifacts/publish/`, confirmed `Yacplayer.exe --version` reports `1.26.5.11`, and compiled `artifacts/installer/Yacplayer-1.26.5.11-win-x64-setup.exe` successfully with Inno Setup 6.7.1. The installer is 3,242,417 bytes with SHA-256 `6E8E56BD884ABC417EBFE49372582E5802A3A645A206F09763AA316B9DF57902`; `dotnet test Yacplayer.sln -c Release --no-build` passed 29/29 tests. Installation, upgrade, and uninstallation smoke testing remain pending.
 - Version update on 2026-11-05: synchronized project/assembly metadata, CLI help, installer, MSIX defaults, regression coverage, and EN/RU documentation to the date-derived version `1.26.5.11`. Focused whitespace verification passed; `dotnet build Yacplayer.sln -c Release --no-restore` succeeded with 0 warnings/0 errors, `dotnet test Yacplayer.sln -c Release --no-build` passed 29/29 tests, and `--version` printed `Yacplayer 1.26.5.11`. Installer, MSIX, and tracked publish binaries were not rebuilt.

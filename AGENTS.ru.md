@@ -81,6 +81,7 @@
 - `V`: Spectrum → Waveform → Off. При смене режима backlog очищается; FFT не считается в Waveform/Off.
 - Waveform рисуется зелёными `.` по min/max envelope. Точка — актуальное намеренное решение дизайна.
 - `B` переключает сохраняемую панель Realtime Audio в достаточно широком layout. В выключенном состоянии вторичный tap не пишет данные, а анализатор уровней, спектра и темпа не вызывается.
+- Строка `Beat` панели Realtime Audio показывает предиктивный импульс ASCII-котиком: `=^o.o^=` на доле и `=^-.-^=` между долями.
 
 ### Метаданные и настройки
 
@@ -265,6 +266,7 @@ Installer собирается после обновления `artifacts/publis
 
 ## Текущая проверка
 
+- Пасхалка с Beat-котиком добавлена 2026-11-05: строка beat в панели Realtime Audio теперь чередует `=^o.o^=` на предсказанной доле и `=^-.-^=` между долями. Renderer coverage проверяет оба состояния. Focused whitespace verification прошла; Release build завершился с 0 warnings/0 errors, прошли 34/34 теста. Timing в реальном терминале вручную не проверен; по просьбе пользователя изменение намеренно оставлено без коммита.
 - Предиктивный BPM tracker добавлен 2026-11-05: определение темпа по разнице broadband RMS заменено на multi-band spectral-flux onset envelope с окном 1024 samples/hop 256, interpolated autocorrelation candidates в диапазоне 55–200 BPM, phase coverage scoring и ограниченный банк из восьми PLL agents с confidence decay и switching hysteresis. Индикатор Beat теперь следует предсказанной phase и переживает короткие пропуски ударов. Добавлены synthetic tests для уточнения 97/127/173 BPM вне сетки, пропущенных ударов и перехода 120→150 BPM. Focused whitespace verification прошла; Release build завершился с 0 warnings/0 errors, прошли 34/34 теста. Accuracy, lock behavior и CPU cost на репрезентативном корпусе реальной музыки вручную не проверены; release binaries не пересобирались.
 - Обновление installer-релиза 2026-11-05: framework-dependent win-x64 приложение заново опубликовано в `artifacts/publish/`, `Yacplayer.exe --version` подтвердил `1.26.5.11`, а `artifacts/installer/Yacplayer-1.26.5.11-win-x64-setup.exe` успешно собран Inno Setup 6.7.1. Размер установщика — 3 242 417 байт, SHA-256 — `6E8E56BD884ABC417EBFE49372582E5802A3A645A206F09763AA316B9DF57902`; `dotnet test Yacplayer.sln -c Release --no-build` прошёл 29/29 тестов. Smoke-проверки установки, обновления и удаления остаются невыполненными.
 - Обновление версии 2026-11-05: project/assembly metadata, CLI help, installer, MSIX defaults, regression-проверка и EN/RU документация синхронизированы на date-derived версию `1.26.5.11`. Focused whitespace verification прошла; `dotnet build Yacplayer.sln -c Release --no-restore` завершился с 0 warnings/0 errors, `dotnet test Yacplayer.sln -c Release --no-build` прошёл 29/29 тестов, а `--version` вывел `Yacplayer 1.26.5.11`. Installer, MSIX и tracked publish binaries не пересобирались.

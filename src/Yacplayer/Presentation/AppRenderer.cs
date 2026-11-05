@@ -215,7 +215,7 @@ internal sealed class AppRenderer
                 : audio.BeatConfidence >= 0.3f
                     ? "Detected"
                     : "Weak";
-        var beat = audio.BeatDetected ? "●" : "·";
+        var beat = audio.BeatDetected ? "=^o.o^=" : "=^-.-^=";
         screen.Write(left + 3, top + 1, Fit($"BPM  : {bpm}  Conf {audio.BeatConfidence:P0}", width), CellColor.Cyan);
         screen.Write(left + 3, top + 2, Fit($"Beat : {beat}  Rhythm {rhythm}", width), audio.BeatDetected ? CellColor.Yellow : CellColor.Green, bold: audio.BeatDetected);
         screen.Write(left + 3, top + 3, Fit($"RMS  : {audio.RmsDbfs,6:0.0} dBFS  Peak {audio.PeakDbfs,6:0.0}", width));

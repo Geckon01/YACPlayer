@@ -22,7 +22,7 @@ Implemented:
 - cancellable background directory loading that keeps the TUI responsive, plus hash-based deduplication and batch queue insertion for large folders;
 - adaptive ANSI/VT interface with colored panels, white captions on green title backgrounds, the current version in the top-right header, and differential rendering with full-row refresh for variable-width Unicode;
 - switchable Hann-windowed FFT spectrum with a smooth true-color green/yellow/red gradient, `.` waveform, and disabled visualizer modes; spectrum and waveform amplitude are independent of output volume and mute;
-- optional realtime audio-analysis panel with multi-band onset detection, PLL-tracked BPM/beat confidence and a predictive rhythm pulse, plus RMS/peak/crest levels, zero-crossing rate, spectral centroid, and dominant frequency; its PCM tap and calculations stop when disabled;
+- optional realtime audio-analysis panel with multi-band onset detection, PLL-tracked BPM/beat confidence and an indicator that flashes in rhythm, plus RMS/peak/crest levels, zero-crossing rate, spectral centroid, and dominant frequency; its PCM tap and calculations stop when disabled;
 - per-user JSON settings;
 - CLI, Release publishing, and an Inno Setup installer;
 - reproducible self-contained MSIX packaging for Microsoft Store submission;

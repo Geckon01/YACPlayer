@@ -48,7 +48,18 @@ public class ApplicationComponentTests
 
         Assert.Contains("Realtime Audio [B]", playerOutput);
         Assert.Contains("BPM", playerOutput);
+        Assert.Contains("=^o.o^=", playerOutput);
         Assert.Contains("Queue (1)", playerOutput);
+
+        var restingVisualization = visualization with
+        {
+            RealtimeAudio = analysis with { BeatDetected = false }
+        };
+        var restingScreen = renderer.Draw(
+            180,
+            30,
+            new(playlist, settings, playback, restingVisualization, browser, false, false, "Ready"));
+        Assert.Contains("=^-.-^=", restingScreen.Diff(null));
 
         var browserScreen = renderer.Draw(
             180,

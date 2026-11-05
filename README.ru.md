@@ -22,7 +22,7 @@ Yacplayer — локальный музыкальный плеер для Window
 - отменяемая фоновая загрузка каталогов без остановки TUI, hash-дедупликация и пакетное добавление больших папок в очередь;
 - адаптивный ANSI/VT-интерфейс с цветными панелями, белыми надписями на зелёном фоне заголовков, текущей версией справа в верхней рамке и diff-rendering с полной перерисовкой строк для Unicode переменной ширины;
 - переключаемые FFT-спектр с Hann window и плавным true-color градиентом зелёный/жёлтый/красный, waveform из `.` и отключённый режим визуализатора; амплитуда спектра и waveform не зависит от выходной громкости и mute;
-- опциональная панель realtime audio analysis: многополосное обнаружение атак, отслеживаемые через PLL BPM/beat confidence и предиктивный индикатор ритма, а также RMS/peak/crest, zero-crossing rate, spectral centroid и dominant frequency; при отключении останавливаются PCM tap и вычисления;
+- опциональная панель realtime audio analysis: многополосное обнаружение атак, отслеживаемые через PLL BPM/beat confidence и мигающий в ритм индикатор, а также RMS/peak/crest, zero-crossing rate, spectral centroid и dominant frequency; при отключении останавливаются PCM tap и вычисления;
 - JSON-настройки в профиле пользователя;
 - CLI, Release publish и установщик Inno Setup;
 - воспроизводимая self-contained MSIX-сборка для Microsoft Store;
