@@ -13,7 +13,7 @@ The target is Windows x64, `.NET 10`, and `net10.0-windows`. The application shi
 1. **One process and one shipping project.** There are no services, IPC endpoints, databases, or plugin hosts.
 2. **Audio is isolated from presentation work.** NAudio/WASAPI requests decoded PCM; FFT, metadata, JSON, and terminal rendering do not execute in the audio callback.
 3. **Bounded sample transport.** The PCM tap writes to fixed-size visualization and optional analysis rings. Under overload, stale samples are discarded instead of blocking playback.
-4. **UI-owned application state with explicit coordinators.** `App` owns the event loop and command routing; `BrowserController`, `CurrentTrackMetadataLoader`, and `VisualizationPipeline` own their respective mutable lifecycles, while `AppRenderer` owns layout only.
+4. **UI-owned application state with explicit coordinators.** `App` owns the event loop and command routing; `BrowserController`, `CurrentTrackMetadataLoader`, `VisualizationPipeline`, and `SettingsController` own their respective mutable lifecycles, while `AppRenderer` owns layout only.
 5. **Device-independent domain tests.** Playlist, ring, FFT, settings, browser filtering, and terminal diff logic can run without WASAPI hardware.
 6. **Declarative terminal frames.** A complete `ScreenBuffer` is built first and compared with the preceding frame to produce an ANSI diff.
 7. **Deterministic terminal restoration.** `TerminalSession.Dispose` restores colors, the cursor, and the primary screen; Ctrl+C becomes cooperative cancellation.
@@ -68,7 +68,8 @@ xUnit, Microsoft.NET.Test.Sdk, coverlet, and the VS xUnit runner are test-only d
 | `Application/BrowserController.cs` | Browser navigation/load lifecycle, path deduplication, and batch queue insertion |
 | `Application/CurrentTrackMetadataLoader.cs` | Cancellation and completion ownership for current-track metadata |
 | `Application/VisualizationPipeline.cs` | Spectrum/waveform/realtime-analysis coordination and reset rules |
-| `Presentation/AppRenderer.cs` | Player/browser layouts, viewports, and `ScreenBuffer` composition |
+| `Application/SettingsController.cs` | Full-screen settings navigation, value changes, and path validation |
+| `Presentation/AppRenderer.cs` | Player/browser/settings layouts, viewports, and `ScreenBuffer` composition |
 | `Cli/Arguments.cs` | Deterministic command-line parser and help text |
 | `Configuration/` | Persisted settings and atomic JSON storage |
 | `Library/Playlist.cs` | Queue selection, navigation, repeat, shuffle bag/history |
@@ -135,7 +136,7 @@ sequenceDiagram
     A->>T: restore terminal
 ```
 
-`App.RunAsync` owns `AudioEngine` and `TerminalSession` through deterministic `using` scopes. Both `Q` and cancellation pass through the same cleanup path. Saving errors do not prevent exit.
+`App.RunAsync` owns `AudioEngine` and `TerminalSession` through deterministic `using` scopes. `Q` first opens a modal `Да` / `Нет` confirmation with `Нет` selected by default; a confirmed exit and cancellation pass through the same cleanup path. Saving errors do not prevent exit.
 
 ## 6. Application event loop
 
@@ -144,7 +145,8 @@ sequenceDiagram
 - `BrowserController` owns browser navigation, cancellable generation-tagged loads, deduplication, and queue batches;
 - `CurrentTrackMetadataLoader` owns the current-track cancellation/completion lifecycle;
 - `VisualizationPipeline` owns both sample rings, visualizer smoothing, waveform reads, and realtime-analysis resets;
-- `AppRenderer` owns list viewports and all player/browser layout composition, but does not issue playback, filesystem, or settings commands.
+- `SettingsController` owns full-screen settings selection and path-edit state and returns explicit change effects to `App`;
+- `AppRenderer` owns list viewports and all player/browser/settings layout composition, but does not issue playback, filesystem, or settings commands.
 
 Each frame:
 
@@ -154,7 +156,7 @@ Each frame:
 4. Obtains a `PlaybackSnapshot`;
 5. asks `VisualizationPipeline` to run only the active visualizer and enabled realtime-analysis paths and apply reset rules;
 6. packages the current references/snapshots into `AppRenderState`;
-7. asks `AppRenderer` to create a `ScreenBuffer` and build either browser or player layout;
+7. asks `AppRenderer` to create a `ScreenBuffer` and build the settings, browser, or player layout;
 8. diffs the frame against the previous one and writes ANSI output;
 9. waits `1000 / FPS` milliseconds with cancellation.
 
@@ -286,13 +288,13 @@ flowchart LR
     Latest --> Dots["interpolated . characters"]
 ```
 
-`SpectrumAnalyzer` allocates FFT buffers, the transform, and the Hann window once. Each analysis reads an FFT-sized sample block, applies the window, performs complex forward FFT, maps each output band to logarithmic frequency limits, finds peak magnitude within matching bins, and normalizes to 0–1.
+`SpectrumAnalyzer` allocates FFT buffers, the transform, and the Hann window once. Each analysis uses an exact-window ring read: if fewer than the configured FFT samples are available, nothing is consumed and the previous bands remain intact. A complete block is windowed, transformed with a complex forward FFT, mapped to logarithmic frequency bands by peak magnitude, and normalized to 0–1.
 
 The UI uses 64 bands and interpolates them to the spectrum-panel width. Vertical levels use ANSI true color with a continuous green-to-yellow-to-red gradient; a yellow marker is drawn at the current bar height. The marker is not a time-based peak-hold buffer.
 
 Waveform mode reads up to 4096 newest mono PCM samples and applies per-frame visual gain so the shape remains visible at low playback volume without changing audio. Each terminal column receives the minimum/maximum envelope of its sample range, mapped around the vertical center and drawn with green `.` characters. Near-silence is left blank instead of amplifying noise. Off mode performs neither FFT nor waveform sampling. The panel title and detail label follow the selected mode.
 
-Current caveat: a short ring read is consumed and then causes cleared bands. An exact/non-consuming read is needed to avoid dropping partial FFT windows.
+Current caveat: the last valid spectrum is retained without elapsed-time decay when playback is inactive or samples stop arriving.
 
 ## 13. Terminal rendering
 
@@ -323,9 +325,10 @@ Current caveat: a new `ScreenBuffer`, cell array, `StringBuilder`, and ANSI stri
 
 Input routing is contextual:
 
-1. Help overlay consumes close keys and suppresses normal commands.
-2. Browser mode routes keys to browser commands.
-3. Otherwise, the player keymap is active.
+1. The exit-confirmation dialog consumes arrows/Tab, Enter, Esc, Y, and N. It is available over the player, browser, help, and settings, except while a settings path is being edited.
+2. Help overlay consumes close keys and suppresses normal commands.
+3. Browser mode routes keys to browser commands.
+4. Otherwise, the player keymap is active.
 
 `Console.KeyAvailable` avoids blocking frame rendering. Keyboard text is never forwarded to a shell or interpreted as ANSI output.
 
@@ -339,11 +342,13 @@ Validation:
 - FPS is 30 or 60, otherwise 30;
 - FFT size is 2048 or 4096, otherwise 2048;
 - unknown enum values become defaults;
-- an unavailable last directory is cleared.
+- unavailable last or startup directories are cleared.
 
 `SettingsStore.LoadAsync` returns defaults for a missing file or IO failure. Malformed JSON is moved to `.bad` when possible. `SaveAsync` creates the parent directory, writes `.tmp`, then moves it over the destination.
 
-CLI FPS, recursive, and no-visualizer flags override the in-memory model. Loaded repeat/shuffle values are applied to `Playlist` during startup. `RealtimeAnalysisEnabled` controls the persisted `B` toggle and defaults to true. Shutdown stores current volume, mute, repeat, shuffle, analysis state, and the remaining settings.
+CLI FPS, recursive, and no-visualizer flags override the in-memory model. Loaded repeat/shuffle values are applied to `Playlist` during startup. `RealtimeAnalysisEnabled` controls the persisted `B` toggle and defaults to true. With no CLI path, startup resolves `StartupDirectory`, then `LastDirectory`, then the process working directory.
+
+`O` opens the full-screen settings view. Every successful edit is applied on the UI loop and immediately passed to `SettingsStore.SaveAsync`; volume/mute, FPS, FFT size, visualizer, realtime analysis, repeat, shuffle, and recursive scanning affect the running process. Changing `LastDirectory` starts an asynchronous browser load, while `StartupDirectory` controls the next pathless launch. The settings schema version is displayed read-only. Shutdown still captures and saves runtime volume, mute, repeat, and shuffle state.
 
 ## 16. Metadata
 
@@ -468,7 +473,7 @@ Priority gaps:
 4. Add generated-WAV integration, optional WASAPI smoke, and terminal snapshot tests.
 5. Consider a self-contained installer or runtime bootstrapper.
 6. Reuse two screen buffers and pooled ANSI output to reduce per-frame GC pressure.
-7. Avoid consuming partial FFT windows; skip spectrum analysis while playback is inactive.
+7. Add time-based spectrum decay and skip spectrum analysis while playback is inactive.
 8. Batch multichannel downmix/ring writes and make recursive scans incremental and cancellable.
 
 ## 24. Extension points

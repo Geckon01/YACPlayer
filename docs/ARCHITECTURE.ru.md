@@ -13,7 +13,7 @@
 1. **Один процесс, один shipping project.** Нет сервисов, IPC, базы данных и plugin host.
 2. **Audio path отделён от UI.** Декодирование и выдача PCM инициируются NAudio/WASAPI; FFT и ANSI-rendering не выполняются внутри audio callback.
 3. **Bounded data flow.** PCM tap пишет в visualization ring и опциональный analysis ring фиксированного размера. При перегрузке старые samples вытесняются, а воспроизведение не ждёт DSP consumer.
-4. **UI-состояние разделено между явными coordinators.** `App` владеет event loop и command routing; `BrowserController`, `CurrentTrackMetadataLoader` и `VisualizationPipeline` владеют своими mutable lifecycle, а `AppRenderer` — только layout.
+4. **UI-состояние разделено между явными coordinators.** `App` владеет event loop и command routing; `BrowserController`, `CurrentTrackMetadataLoader`, `VisualizationPipeline` и `SettingsController` владеют своими mutable lifecycle, а `AppRenderer` — только layout.
 5. **Доменная логика тестируема без устройства.** Playlist, ring buffer, FFT, settings, browser filtering и terminal diff не требуют WASAPI.
 6. **Terminal output строится декларативно.** Каждый кадр сначала формируется в `ScreenBuffer`, затем сравнивается с предыдущим и превращается в минимизированный ANSI diff.
 7. **Ошибки окружения не должны повреждать терминал.** `TerminalSession.Dispose` восстанавливает экран, цвета и курсор; Ctrl+C переводится в cancellation.
@@ -68,7 +68,8 @@ Test-only dependencies: xUnit, Microsoft.NET.Test.Sdk, coverlet collector, xUnit
 | `Application/BrowserController.cs` | Browser navigation/load lifecycle, path deduplication и batch queue insertion |
 | `Application/CurrentTrackMetadataLoader.cs` | Cancellation/completion ownership metadata текущего трека |
 | `Application/VisualizationPipeline.cs` | Координация spectrum/waveform/realtime analysis и reset rules |
-| `Presentation/AppRenderer.cs` | Player/browser layouts, viewports и композиция `ScreenBuffer` |
+| `Application/SettingsController.cs` | Навигация полноэкранных настроек, изменение значений и проверка путей |
+| `Presentation/AppRenderer.cs` | Player/browser/settings layouts, viewports и композиция `ScreenBuffer` |
 | `Cli/Arguments.cs` | Ручной детерминированный parser CLI и статический help text |
 | `Configuration/` | Persisted settings и атомарное JSON-хранилище |
 | `Library/Playlist.cs` | Queue navigation, selection, repeat, shuffle bag/history |
@@ -139,7 +140,7 @@ sequenceDiagram
 ### 5.3 Shutdown ownership
 
 - `App.RunAsync` владеет `AudioEngine` и `TerminalSession` через `using`.
-- `Q` выходит через единый cleanup path.
+- `Q` сначала открывает модальный диалог `Да` / `Нет`, где по умолчанию выбрано `Нет`; подтверждённый выход проходит через единый cleanup path.
 - Ctrl+C отменяет delay/event loop; cleanup выполняется обычным control flow.
 - Перед сохранением вызывается `audio.Stop()`.
 - Ошибка сохранения `IOException` не мешает выходу.
@@ -152,7 +153,8 @@ sequenceDiagram
 - `BrowserController` владеет навигацией, cancellable generation-tagged loads, дедупликацией и queue batches;
 - `CurrentTrackMetadataLoader` владеет cancellation/completion lifecycle текущего трека;
 - `VisualizationPipeline` владеет обоими sample rings, smoothing spectrum, чтением waveform и reset realtime-анализа;
-- `AppRenderer` владеет list viewports и всей композицией player/browser layout, но не выполняет playback, filesystem или settings commands.
+- `SettingsController` владеет выбором строки полноэкранных настроек и состоянием редактирования путей, возвращая эффекты изменений в `App`;
+- `AppRenderer` владеет list viewports и всей композицией player/browser/settings layout, но не выполняет playback, filesystem или settings commands.
 
 Главный цикл на каждом кадре:
 
@@ -162,7 +164,7 @@ sequenceDiagram
 4. Получает `PlaybackSnapshot` из `AudioEngine`.
 5. Просит `VisualizationPipeline` выполнить только активный visualizer и включённый realtime analysis и применить reset rules.
 6. Упаковывает текущие references/snapshots в `AppRenderState`.
-7. Просит `AppRenderer` создать `ScreenBuffer` и построить browser либо player layout.
+7. Просит `AppRenderer` создать `ScreenBuffer` и построить settings, browser либо player layout.
 8. Вычисляет ANSI diff относительно прошлого кадра и пишет его в terminal.
 9. Делает `Task.Delay(1000 / FPS, token)`.
 
@@ -330,8 +332,8 @@ flowchart LR
 
 `SpectrumAnalyzer` выделяет buffers и `FastFourierTransform` один раз в constructor. Для каждого анализа:
 
-1. Пытается прочитать ровно FFT size samples.
-2. При недостатке очищает output bands и возвращает `false`.
+1. Пытается прочитать ровно FFT size samples через exact-window read.
+2. При недостатке ничего не потребляет, сохраняет предыдущие output bands и возвращает `false`.
 3. Умножает samples на заранее вычисленное Hann window.
 4. Выполняет complex forward FFT.
 5. Для каждой output band вычисляет логарифмические low/high frequencies.
@@ -398,9 +400,10 @@ Browser layout:
 
 Input имеет контекстный приоритет:
 
-1. Если открыт help overlay, принимаются только close keys.
-2. Если открыт browser, клавиши маршрутизируются в browser commands; например `Enter` не запускает selected queue item.
-3. Иначе действует player keymap.
+1. Диалог подтверждения выхода принимает стрелки/Tab, Enter, Esc, Y и N. Он доступен поверх player, browser, help и settings, кроме режима редактирования пути настройки.
+2. Если открыт help overlay, принимаются только close keys.
+3. Если открыт browser, клавиши маршрутизируются в browser commands; например `Enter` не запускает selected queue item.
+4. Иначе действует player keymap.
 
 `Console.KeyAvailable` предотвращает блокировку frame rendering. Ввод не передаётся в shell и не интерпретируется как ANSI text.
 
@@ -414,7 +417,7 @@ Validation:
 - FPS только `30` или `60`, иначе `30`;
 - FFT size только `2048` или `4096`, иначе `2048`;
 - неизвестные enums заменяются defaults;
-- отсутствующий `LastDirectory` очищается.
+- отсутствующие `LastDirectory` и `StartupDirectory` очищаются.
 
 `SettingsStore.LoadAsync`:
 
@@ -425,7 +428,9 @@ Validation:
 
 `SaveAsync` создаёт directory, пишет `.tmp`, затем `File.Move(tmp, target, overwrite: true)`.
 
-CLI FPS, recursive и no-visualizer меняют in-memory settings текущего запуска. Загруженные `RepeatMode`/`Shuffle` применяются к `Playlist` при startup. `RealtimeAnalysisEnabled` хранит состояние клавиши `B` и по умолчанию равен true. На shutdown сохраняются volume, mute, repeat, shuffle, состояние анализа и остальная модель.
+CLI FPS, recursive и no-visualizer меняют in-memory settings текущего запуска. Загруженные `RepeatMode`/`Shuffle` применяются к `Playlist` при startup. `RealtimeAnalysisEnabled` хранит состояние клавиши `B` и по умолчанию равен true. Без CLI-пути startup последовательно выбирает `StartupDirectory`, `LastDirectory` и process working directory.
+
+`O` открывает полноэкранные настройки. Каждое корректное изменение применяется в UI-loop и сразу передаётся в `SettingsStore.SaveAsync`; volume/mute, FPS, FFT size, visualizer, realtime analysis, repeat, shuffle и recursive scan влияют на текущий процесс. Изменение `LastDirectory` запускает асинхронную загрузку browser, а `StartupDirectory` задаёт следующий запуск без пути. Версия схемы показывается read-only. На shutdown по-прежнему фиксируются и сохраняются runtime volume, mute, repeat и shuffle.
 
 ## 16. Metadata
 
@@ -564,7 +569,7 @@ Inno Setup:
 4. Добавить integration WAV fixture, manual/optional WASAPI smoke test и terminal snapshot tests.
 5. Рассмотреть self-contained installer или автоматический bootstrap runtime вместо блокирующей prerequisite check.
 6. Переиспользовать два screen buffer и pooled ANSI output, чтобы уменьшить per-frame GC pressure.
-7. Не потреблять неполные FFT windows и пропускать spectrum analysis при inactive playback.
+7. Добавить time-based decay спектра и пропускать spectrum analysis при inactive playback.
 8. Пакетно выполнять multichannel downmix/ring writes и сделать recursive scans incremental/cancellable.
 
 ## 24. Точки расширения

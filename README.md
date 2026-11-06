@@ -21,9 +21,9 @@ Implemented:
 - built-in Midnight Commander-style browser with directories, `[..]`, a `This PC` drive list, and file/folder queue insertion;
 - cancellable background directory loading that keeps the TUI responsive, plus hash-based deduplication and batch queue insertion for large folders;
 - adaptive ANSI/VT interface with colored panels, white captions on green title backgrounds, the current version in the top-right header, and differential rendering with full-row refresh for variable-width Unicode;
-- switchable Hann-windowed FFT spectrum with a smooth true-color green/yellow/red gradient, `.` waveform, and disabled visualizer modes; spectrum and waveform amplitude are independent of output volume and mute;
+- switchable Hann-windowed FFT spectrum with exact-window accumulation, a smooth true-color green/yellow/red gradient, `.` waveform, and disabled visualizer modes; spectrum and waveform amplitude are independent of output volume and mute;
 - optional realtime audio-analysis panel with multi-band onset detection, PLL-tracked BPM/beat confidence and an indicator that flashes in rhythm, plus RMS/peak/crest levels, zero-crossing rate, spectral centroid, and dominant frequency; its PCM tap and calculations stop when disabled;
-- per-user JSON settings;
+- a full-screen settings menu whose changes apply and save immediately to per-user JSON, including a configurable startup folder;
 - CLI, Release publishing, and an Inno Setup installer;
 - reproducible self-contained MSIX packaging for Microsoft Store submission;
 - embedded multi-resolution Windows application icon.
@@ -58,7 +58,7 @@ The installer performs a per-user installation into `%LOCALAPPDATA%\Programs\Yac
 .\artifacts\publish\Yacplayer.exe "C:\Music" --recursive
 ```
 
-With no arguments, the file browser opens immediately in the last available directory or the process working directory.
+With no arguments, the file browser opens immediately in the configured startup folder, the last available browser directory, or the process working directory, in that order.
 
 ### Run from source
 
@@ -110,8 +110,9 @@ When stdin or stdout is redirected, the interactive TUI is not started. The proc
 | `V` | Spectrum → Waveform → Off; the panel title follows the active mode |
 | `B` | Toggle the realtime audio-analysis panel and its calculations |
 | `F` | Open the file browser |
+| `O` | Open the full-screen settings menu |
 | `?` | Open the in-application help |
-| `Q` | Shut down cleanly |
+| `Q` | Open the `Да` / `Нет` exit-confirmation dialog |
 
 ## File browser controls
 
@@ -124,8 +125,9 @@ The left panel contains directories and supported audio files; the right panel s
 | `Backspace` | Open the parent directory |
 | `Enter` on `[..]` | Open the parent directory |
 | `A` | Append the selected file or directory contents without starting playback |
+| `O` | Open the full-screen settings menu |
 | `F` / `Esc` | Close the browser |
-| `Q` | Exit the application |
+| `Q` | Open the `Да` / `Нет` exit-confirmation dialog |
 
 Moving above a drive root opens the virtual `This PC` list containing all ready drives. Inaccessible directories do not terminate the application and currently appear empty.
 
@@ -158,11 +160,14 @@ Settings file: `%LOCALAPPDATA%\Yacplayer\settings.json`.
   "RepeatMode": "Off",
   "Shuffle": false,
   "Recursive": false,
-  "LastDirectory": ""
+  "LastDirectory": "",
+  "StartupDirectory": ""
 }
 ```
 
-Validation covers the volume range, FPS (`30`/`60`), FFT size (`2048`/`4096`), enum values, and existence of the last directory. Malformed JSON is moved to `settings.json.bad`, then defaults are used. Saving writes `settings.json.tmp` before replacing the target. Explicit CLI options override settings for the current run.
+Press `O` to edit every persisted option in a full-screen menu. Use Up/Down to select, Left/Right (or `+`/`-`) to change a value, and Enter to edit folder paths. Valid changes affect the running player and are written immediately. `StartupDirectory` is the fixed folder used when launching without a path; leave it empty to fall back to `LastDirectory`. Changing `LastDirectory` also opens that folder in the active browser.
+
+Validation covers the volume range, FPS (`30`/`60`), FFT size (`2048`/`4096`), enum values, and existence of both directory paths. Malformed JSON is moved to `settings.json.bad`, then defaults are used. Saving writes `settings.json.tmp` before replacing the target. Explicit CLI options override settings for the current run.
 
 ## Build and test
 
@@ -174,7 +179,7 @@ dotnet test Yacplayer.sln -c Release
 
 GitHub Actions runs the same restore, Release build, and test sequence on Windows for every push and pull request.
 
-The current suite contains 29 device-independent unit tests covering CLI parsing, four-part assembly versioning, playlist behavior and restored repeat/shuffle state including single-track Repeat All, batch insertion during an active shuffle cycle, bounded audio-event delivery, list viewport scrolling/clamping, ring-buffer wrapping/latest reads, independently gated pre-volume PCM tapping, realtime level/spectrum/tempo analysis, extracted player/browser layout rendering, browser-controller deduplication, ANSI/true-color diff styles, batching and Unicode-row refresh, settings, FFT, metadata fallback, and cancellable browser filtering/sorting.
+The current suite contains 40 device-independent unit tests covering CLI parsing, four-part assembly versioning, playlist behavior and restored repeat/shuffle state including single-track Repeat All, batch insertion during an active shuffle cycle, bounded audio-event delivery, list viewport scrolling/clamping, ring-buffer wrapping/latest/exact reads, independently gated pre-volume PCM tapping, realtime level/spectrum/tempo analysis including partial FFT accumulation, player/browser/settings layout rendering, settings interaction and persistence, browser-controller deduplication, ANSI/true-color diff styles, batching and Unicode-row refresh, FFT reconfiguration, metadata fallback, and cancellable browser filtering/sorting.
 
 Framework-dependent win-x64 publish:
 
@@ -242,7 +247,7 @@ Complete engineering documentation: [English](docs/ARCHITECTURE.md) · [Русс
 - **Why does a visible file not play?** Appearing in the browser does not guarantee an installed system codec.
 - **Why does Explorer show an old icon?** Windows may cache executable icons; rename the file or restart Explorer.
 - **Why do settings not load?** Inspect `settings.json.bad` next to the configuration file.
-- **Why does the terminal remain in the alternate screen?** Normal `Q` and Ctrl+C paths restore it; after a hard process termination, reset the terminal or open a new tab.
+- **Why does the terminal remain in the alternate screen?** Confirming `Да` after `Q`, or using Ctrl+C, restores it; after a hard process termination, reset the terminal or open a new tab.
 
 Use `dotnet-counters` and `dotnet-trace` for profiling. Neither is a runtime dependency.
 

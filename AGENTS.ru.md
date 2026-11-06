@@ -31,7 +31,7 @@
 - ATL 7.19.0 лениво загружает метаданные только текущего трека.
 - Настройки: `%LOCALAPPDATA%\Yacplayer\settings.json`.
 - Есть framework-dependent win-x64 publish, win-x64 Native AOT, Inno Setup 6 и self-contained x64 MSIX для Microsoft Store.
-- 34 xUnit-теста без реального аудиоустройства.
+- 40 xUnit-тестов без реального аудиоустройства.
 - MIT; в документации есть уведомление об AI-assisted/generated code.
 - Публичные документы ведутся сначала на английском и имеют русские версии.
 
@@ -42,7 +42,7 @@
 - `Program.cs` настраивает UTF-8, разбирает параметры, преобразует Ctrl+C в cancellation и возвращает код 2 для CLI-ошибок и 3 для ошибок запуска.
 - Синтаксис: `yacplayer [path] [--recursive] [--fps 30|60] [--no-visualizer]`.
 - `--help` и `--version` не создают аудио и alternate screen.
-- Файл сразу воспроизводится, каталог сканируется в очередь, а без пути открывается браузер в последнем/текущем каталоге.
+- Файл сразу воспроизводится, каталог сканируется в очередь, а без пути браузер открывается в заданном стартовом, последнем или текущем рабочем каталоге — в таком порядке.
 - При перенаправленном вводе/выводе TUI не запускается.
 
 ### Воспроизведение и очередь
@@ -78,18 +78,20 @@
 - Справа в верхней рамке показывается версия запущенной сборки в формате `vA.B.C.D`; она скрывается только при недостаточной ширине терминала.
 - Progress bar рисуется зелёными `█`, остаток — `·`.
 - Спектр использует `█`, плавный ANSI true-color градиент зелёный/жёлтый/красный по высоте и жёлтый верхний маркер.
-- `V`: Spectrum → Waveform → Off. При смене режима backlog очищается; FFT не считается в Waveform/Off.
+- `V`: Spectrum → Waveform → Off. При смене режима backlog очищается; FFT не считается в Waveform/Off. Spectrum analysis потребляет только полные FFT-окна, поэтому высокий UI FPS и режим 4096 bins не выбрасывают частичное накопление.
 - Waveform рисуется зелёными `.` по min/max envelope. Точка — актуальное намеренное решение дизайна.
 - `B` переключает сохраняемую панель Realtime Audio в достаточно широком layout. В выключенном состоянии вторичный tap не пишет данные, а анализатор уровней, спектра и темпа не вызывается.
+- `O` открывает полноэкранное меню всех сохраняемых JSON-параметров. Корректные изменения сразу применяются и сохраняются; пути редактируются inline и должны указывать на существующие каталоги.
+- `Q` открывает модальный диалог подтверждения выхода `Да` / `Нет` поверх любого экрана приложения, кроме редактирования пути настройки. По умолчанию выбрано безопасное `Нет`; стрелки/Tab меняют выбор, Enter принимает его, Esc/N отменяет, Y подтверждает выход. Ctrl+C остаётся немедленным cancellation path.
 - Строка `Beat` панели Realtime Audio показывает предиктивный импульс ASCII-котиком: `=^o.o^=` на доле и `=^-.-^=` между долями.
 
 ### Метаданные и настройки
 
 - До загрузки используются имя файла, `Unknown artist`, пустой album и нулевая duration.
 - ATL загружает только текущий элемент. Результат передаётся через concurrent queue и применяется UI-loop.
-- Валидация ограничивает volume, FPS 30/60, FFT 2048/4096, enum и существование last directory.
+- Валидация ограничивает volume, FPS 30/60, FFT 2048/4096, enum и существование last/startup directory.
 - Повреждённый JSON переносится в `.bad`; сохранение идёт через `.tmp`.
-- Модель содержит volume, mute, visualizer, realtime analysis, repeat, shuffle, recursive, FFT, FPS и last directory.
+- Модель содержит volume, mute, visualizer, realtime analysis, repeat, shuffle, recursive, FFT, FPS, last directory и опциональный фиксированный startup directory. Версия схемы показывается в меню read-only.
 
 ### Упаковка
 
@@ -106,6 +108,7 @@
 Program / CLI
     -> App async UI loop (composition, input routing, playlist orchestration)
         -> BrowserController -> FileBrowser worker -> UI-owned browser state
+        -> SettingsController -> immediate runtime effects and SettingsStore save
         -> CurrentTrackMetadataLoader -> MetadataService -> UI-owned TrackEntry
         -> VisualizationPipeline
         -> AudioEngine -> AudioFileReader -> PcmTapSampleProvider
@@ -144,6 +147,7 @@ Program / CLI
 | `src/Yacplayer/Program.cs` | Entry point, CLI, cancellation, top-level errors |
 | `src/Yacplayer/App.cs` | Composition root, loop, input routing и shutdown/settings orchestration |
 | `src/Yacplayer/Application/` | Browser controller, lifecycle metadata текущего трека и visualization pipeline |
+| `src/Yacplayer/Application/SettingsController.cs` | Полноэкранная навигация настроек, inline-редактирование путей и эффекты изменений |
 | `src/Yacplayer/Presentation/` | Player/browser layouts и terminal rendering |
 | `src/Yacplayer/Cli/` | Parser и help |
 | `src/Yacplayer/Configuration/` | Settings и JSON storage |
@@ -213,11 +217,10 @@ Installer собирается после обновления `artifacts/publis
 ### P1
 
 1. Заменить ring на доказанный SPSC: producer и consumer сейчас оба пишут `_read`.
-2. Не потреблять неполные FFT-window; хранить последний spectrum и делать time-based decay.
-3. Переиспользовать screen buffers и ANSI storage вместо allocation на каждом frame.
-4. Пакетно downmix/write multichannel samples вместо `ring.Write` на каждый sample.
-5. Сделать recursive scan incremental/cancellable/batched; startup и `A` пока материализуют весь результат.
-6. Зафиксировать CPU/allocation/memory/callback/terminal/soak baselines.
+2. Переиспользовать screen buffers и ANSI storage вместо allocation на каждом frame.
+3. Пакетно downmix/write multichannel samples вместо `ring.Write` на каждый sample.
+4. Сделать recursive scan incremental/cancellable/batched; startup и `A` пока материализуют весь результат.
+5. Зафиксировать CPU/allocation/memory/callback/terminal/soak baselines.
 
 ### P2/P3
 
@@ -226,6 +229,7 @@ Installer собирается после обновления `artifacts/publis
 - Отличать inaccessible directory от empty.
 - Учитывать grapheme/display width.
 - Не считать spectrum при inactive playback и кешировать band/bin mapping.
+- Применять elapsed-time decay к последнему корректному spectrum, когда samples перестают поступать.
 - Перейти к monotonic frame deadline и снижать idle rate.
 - Добавить input/layout snapshots, ring stress, generated-WAV integration, optional WASAPI, installer и soak tests.
 - Добавить bitrate только при явной поддержке, сохранив lazy current-track policy.
@@ -266,6 +270,12 @@ Installer собирается после обновления `artifacts/publis
 
 ## Текущая проверка
 
+Обновление статуса коммитов: поддержка FFT/runtime закоммичена как `0d433ae`, меню настроек и подтверждение выхода — как `31a86f3`. Эти коммиты заменяют более ранние формулировки «не закоммичено» в датированных записях ниже.
+
+- Подтверждение выхода добавлено 2026-11-07: `Q` теперь открывает модальный диалог `Да` / `Нет` поверх player, browser, help и settings с безопасным выбором `Нет` по умолчанию. Реализованы навигация стрелками/Tab, принятие через Enter, отмена через Esc/N и подтверждение через Y; редактирование пути и Ctrl+C сохранили прежнюю семантику. Добавлен renderer-тест русского вопроса и обоих вариантов. Focused whitespace verification прошла успешно; `dotnet build Yacplayer.sln -c Release --no-restore` завершился с 0 warnings/0 errors, `dotnet test Yacplayer.sln -c Release --no-build` прошёл 41/41 тестов. Ручная проверка интерактивного TUI пока не выполнена; бинарные артефакты не пересобирались, изменение не закоммичено.
+
+- Starvation FFT исправлен 2026-11-07: `SpectrumAnalyzer` теперь использует `SampleRingBuffer.TryReadExact`, оставляя неполные окна в очереди и сохраняя последние bands до накопления полного окна из 2048/4096 samples. Это не позволяет смене FPS и runtime-смене FFT size постоянно съедать короткие блоки и навсегда обнулять spectrum. Добавлены regression-тесты, чередующие порции 48 kHz audio размером для 60 и 30 FPS, для обоих поддерживаемых FFT sizes. Focused spectrum tests прошли 3/3; `dotnet build Yacplayer.sln -c Release --no-restore` завершился с 0 warnings/0 errors, `dotnet test Yacplayer.sln -c Release --no-build` прошёл 40/40 тестов. Реальное переключение WASAPI/TUI вручную не проверено; binaries не пересобирались, изменение оставлено без коммита.
+- Полноэкранное меню настроек добавлено 2026-11-06: `O` открывает все сохраняемые JSON-параметры. Корректные изменения применяются в UI-loop и сразу сохраняются; пути валидируются, `LastDirectory` переводит browser в выбранную папку, а опциональный `StartupDirectory` имеет приоритет при запуске без пути. Смена FFT size во время работы пересоздаёт spectrum analyzer, для mute добавлен идемпотентный setter. Добавлены regression-тесты SettingsController, полноэкранного rendering, persistence startup directory и перенастройки FFT. `dotnet build Yacplayer.sln -c Release --no-restore` завершился с 0 warnings/0 errors, `dotnet test Yacplayer.sln -c Release --no-build` прошёл 38/38 тестов. Ручная проверка TUI-ввода, редактирования путей, WASAPI-изменений и restart behavior не выполнена; binaries не пересобирались, изменение оставлено без коммита.
 - Пасхалка с Beat-котиком добавлена 2026-11-05: строка beat в панели Realtime Audio теперь чередует `=^o.o^=` на предсказанной доле и `=^-.-^=` между долями. Renderer coverage проверяет оба состояния. Focused whitespace verification прошла; Release build завершился с 0 warnings/0 errors, прошли 34/34 теста. Timing в реальном терминале вручную не проверен; по просьбе пользователя изменение намеренно оставлено без коммита.
 - Предиктивный BPM tracker добавлен 2026-11-05: определение темпа по разнице broadband RMS заменено на multi-band spectral-flux onset envelope с окном 1024 samples/hop 256, interpolated autocorrelation candidates в диапазоне 55–200 BPM, phase coverage scoring и ограниченный банк из восьми PLL agents с confidence decay и switching hysteresis. Индикатор Beat теперь следует предсказанной phase и переживает короткие пропуски ударов. Добавлены synthetic tests для уточнения 97/127/173 BPM вне сетки, пропущенных ударов и перехода 120→150 BPM. Focused whitespace verification прошла; Release build завершился с 0 warnings/0 errors, прошли 34/34 теста. Accuracy, lock behavior и CPU cost на репрезентативном корпусе реальной музыки вручную не проверены; release binaries не пересобирались.
 - Обновление installer-релиза 2026-11-05: framework-dependent win-x64 приложение заново опубликовано в `artifacts/publish/`, `Yacplayer.exe --version` подтвердил `1.26.5.11`, а `artifacts/installer/Yacplayer-1.26.5.11-win-x64-setup.exe` успешно собран Inno Setup 6.7.1. Размер установщика — 3 242 417 байт, SHA-256 — `6E8E56BD884ABC417EBFE49372582E5802A3A645A206F09763AA316B9DF57902`; `dotnet test Yacplayer.sln -c Release --no-build` прошёл 29/29 тестов. Smoke-проверки установки, обновления и удаления остаются невыполненными.

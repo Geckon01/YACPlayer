@@ -31,7 +31,7 @@ Do not remove or weaken this contract. Its purpose is to let a new agent underst
 - Metadata: ATL 7.19.0, loaded lazily for the current track only.
 - Persistence: per-user JSON at `%LOCALAPPDATA%\Yacplayer\settings.json`.
 - Distribution: framework-dependent win-x64 publish, optional win-x64 Native AOT publish, an Inno Setup 6 installer, and a self-contained x64 MSIX build for Microsoft Store.
-- Automated tests: 34 xUnit tests that avoid real audio hardware.
+- Automated tests: 40 xUnit tests that avoid real audio hardware.
 - License: MIT. The repository and user-facing documentation carry an AI-assisted/generated-code notice.
 - Public documentation is English-first with Russian counterparts.
 
@@ -42,7 +42,7 @@ Do not remove or weaken this contract. Its purpose is to let a new agent underst
 - `Program.cs` configures UTF-8, parses arguments, handles Ctrl+C through cancellation, and maps malformed arguments to exit code 2 and startup failures to exit code 3.
 - Syntax: `yacplayer [path] [--recursive] [--fps 30|60] [--no-visualizer]`.
 - `--help` and `--version` do not initialize audio or the alternate terminal screen.
-- A supplied file starts playback. A supplied directory is scanned into the queue. With no path, the built-in browser opens in the saved last directory or the process working directory.
+- A supplied file starts playback. A supplied directory is scanned into the queue. With no path, the built-in browser opens in the configured startup directory, saved last directory, or process working directory, in that order.
 - Redirected input/output skips the interactive TUI, reports the number of loaded tracks, and exits.
 
 ### Playback and queue
@@ -78,18 +78,20 @@ Do not remove or weaken this contract. Its purpose is to let a new agent underst
 - The top-right header shows the running assembly version as `vA.B.C.D` and hides it only when the terminal is too narrow.
 - The progress bar uses solid green `█` cells and a `·` remainder.
 - Spectrum columns use `█`, with a smooth ANSI true-color green/yellow/red gradient based on height and a yellow top marker.
-- `V` cycles Spectrum → Waveform → Off. Switching mode resets visualization backlog, and FFT is not calculated in Waveform or Off modes.
+- `V` cycles Spectrum → Waveform → Off. Switching mode resets visualization backlog, and FFT is not calculated in Waveform or Off modes. Spectrum analysis consumes only complete FFT windows, so high UI FPS and 4096-bin mode cannot discard partial accumulation.
 - The waveform draws a normalized min/max envelope with green `.` characters. The dot glyph is the current intentional design.
 - `B` toggles the persisted Realtime Audio panel in sufficiently wide layouts. When off, the secondary tap stops writing and the level/spectral/tempo analyzer is not invoked.
+- `O` opens a full-screen settings menu containing every persisted JSON option. Successful changes apply and save immediately; folder paths are edited inline and must resolve to existing directories.
+- `Q` opens a modal Russian `Да` / `Нет` exit confirmation over every application view, except while a settings path is being edited. `Нет` is selected by default; arrows/Tab change the choice, Enter accepts it, Esc/N cancels, and Y confirms exit. Ctrl+C remains an immediate cancellation path.
 - The Realtime Audio `Beat` row renders the predictive pulse as an ASCII cat: `=^o.o^=` on the beat and `=^-.-^=` between beats.
 
 ### Metadata and settings
 
 - Queue entries initially use filename title, `Unknown artist`, empty album, and zero duration.
 - Only the currently playing entry is loaded through ATL. Cancellation follows track changes; the worker posts a completion to the UI loop rather than mutating the entry directly.
-- Settings validation clamps volume, accepts only 30/60 FPS and 2048/4096 FFT sizes, validates enums, and drops a missing last-directory path.
+- Settings validation clamps volume, accepts only 30/60 FPS and 2048/4096 FFT sizes, validates enums, and drops missing last/startup-directory paths.
 - Malformed JSON is moved to `settings.json.bad` when possible. Saves use `settings.json.tmp` followed by replacement.
-- Volume, mute, visualizer mode, real-time analysis, repeat, shuffle, recursive mode, FFT size, FPS, and last directory are represented in settings.
+- Volume, mute, visualizer mode, real-time analysis, repeat, shuffle, recursive mode, FFT size, FPS, last directory, and an optional fixed startup directory are represented in settings. The schema version is shown read-only in the settings menu.
 
 ### Packaging and branding
 
@@ -106,6 +108,7 @@ Do not remove or weaken this contract. Its purpose is to let a new agent underst
 Program / CLI
     -> App async UI loop (composition, input routing, playlist orchestration)
         -> BrowserController -> FileBrowser worker -> UI-owned browser state
+        -> SettingsController -> immediate runtime effects and SettingsStore save
         -> CurrentTrackMetadataLoader -> MetadataService -> UI-owned TrackEntry update
         -> VisualizationPipeline
         -> AudioEngine
@@ -146,6 +149,7 @@ Ownership and safety invariants:
 | `src/Yacplayer/Program.cs` | Process entry, CLI result handling, cancellation, top-level errors |
 | `src/Yacplayer/App.cs` | Composition root, main loop, input routing, and shutdown/settings orchestration |
 | `src/Yacplayer/Application/` | Browser controller, current-track metadata lifecycle, and visualization pipeline |
+| `src/Yacplayer/Application/SettingsController.cs` | Full-screen settings navigation, inline path editing, and change effects |
 | `src/Yacplayer/Presentation/` | Player/browser layouts and terminal rendering |
 | `src/Yacplayer/Cli/` | Argument parser and built-in help |
 | `src/Yacplayer/Configuration/` | Settings model, source-generated JSON context, atomic-ish storage |
@@ -218,7 +222,7 @@ dotnet build Yacplayer.sln -c Release
 dotnet test Yacplayer.sln -c Release
 ```
 
-Add focused tests for changed device-independent behavior. The current suite covers CLI rejection, playlist repeat/removal/shuffle including the single-track Repeat All boundary, ring wrapping/latest reads, gated pre-volume PCM tapping, ANSI diff/color/batching, settings round trip and malformed JSON, synthetic spectrum/tempo analysis, extracted player/browser layouts, browser-controller deduplication, metadata fallback, and browser sorting/filtering.
+Add focused tests for changed device-independent behavior. The current suite covers CLI rejection, playlist repeat/removal/shuffle including the single-track Repeat All boundary, ring wrapping/latest/exact reads, gated pre-volume PCM tapping, ANSI diff/color/batching, settings interaction/round trip and malformed JSON, startup-directory persistence, synthetic spectrum/tempo analysis including partial-window accumulation across FPS changes, FFT reconfiguration, extracted player/browser/settings layouts, browser-controller deduplication, metadata fallback, and browser sorting/filtering.
 
 Automated tests do not verify real WASAPI behavior. Audio, terminal, or packaging work should also record an appropriate manual smoke check when the environment permits:
 
@@ -238,11 +242,10 @@ The detailed backlog is [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md). Keep this 
 ### P1: correctness and performance
 
 1. Replace the ring protocol with a proven SPSC design. Producer overflow and consumer reads currently both write `_read`.
-2. Stop consuming and discarding partial FFT windows; retain the last valid spectrum and use time-based decay.
-3. Reuse screen buffers and ANSI output storage instead of allocating a cell array and diff string every frame.
-4. Batch multichannel downmix/ring writes; the callback currently invokes `ring.Write` per mono sample.
-5. Make recursive scanning incremental, cancellable, and batched; startup and `A` scans still materialize their full result.
-6. Establish CPU, allocation, memory-growth, callback-duration, terminal-throughput, and soak baselines.
+2. Reuse screen buffers and ANSI output storage instead of allocating a cell array and diff string every frame.
+3. Batch multichannel downmix/ring writes; the callback currently invokes `ring.Write` per mono sample.
+4. Make recursive scanning incremental, cancellable, and batched; startup and `A` scans still materialize their full result.
+5. Establish CPU, allocation, memory-growth, callback-duration, terminal-throughput, and soak baselines.
 
 ### P2/P3: behavior and maintainability
 
@@ -251,6 +254,7 @@ The detailed backlog is [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md). Keep this 
 - Distinguish an inaccessible browser directory from an empty one.
 - Handle terminal grapheme/display width instead of assuming one UTF-16 `char` per column.
 - Avoid spectrum work while playback is inactive and cache frequency-band/bin mappings.
+- Apply elapsed-time decay to the last valid spectrum when samples stop arriving.
 - Replace delay-after-work scheduling with monotonic frame deadlines and a lower idle rate.
 - Add input/layout snapshots, concurrent ring stress tests, generated-WAV integration tests, optional WASAPI smoke tests, installer tests, and long-running soak coverage.
 - Calculate/display bitrate if it becomes a supported metadata field; preserve the current lazy-current-track policy unless requirements change.
@@ -299,6 +303,14 @@ Local-only caution at the time of this update: `yacplayer-history-backup-2026110
 ## Current verification record
 
 Update this section after every material change.
+
+Commit status update: the FFT/runtime support is committed as `0d433ae`; the settings menu and exit confirmation are committed as `31a86f3`. These commits supersede the earlier “remains uncommitted” wording retained in the dated verification entries below.
+
+- Exit confirmation added on 2026-11-07: `Q` now opens a modal `Да` / `Нет` dialog over the player, browser, help, and settings, with the safe `Нет` choice selected by default. Arrow/Tab navigation, Enter acceptance, Esc/N cancellation, and Y confirmation are implemented; path editing and Ctrl+C retain their previous semantics. Added renderer coverage for the Russian prompt and both choices. Focused whitespace verification succeeded; `dotnet build Yacplayer.sln -c Release --no-restore` completed with 0 warnings/0 errors and `dotnet test Yacplayer.sln -c Release --no-build` passed 41/41 tests. Manual interactive TUI verification remains pending; no binary artifacts were rebuilt and the change remains uncommitted.
+
+- FFT starvation fixed on 2026-11-07: `SpectrumAnalyzer` now uses `SampleRingBuffer.TryReadExact`, leaving partial windows queued and retaining the last bands until a complete 2048/4096-sample window is available. This prevents FPS and runtime FFT-size changes from repeatedly consuming undersized blocks and permanently blanking the spectrum. Added regressions that alternate 48 kHz audio chunks sized for 60 and 30 FPS for both supported FFT sizes. Focused spectrum tests passed 3/3; `dotnet build Yacplayer.sln -c Release --no-restore` succeeded with 0 warnings/0 errors and `dotnet test Yacplayer.sln -c Release --no-build` passed 40/40 tests. Real WASAPI/TUI switching remains manually unverified; no binary artifacts were rebuilt and the change remains uncommitted.
+
+- Full-screen settings menu added on 2026-11-06: `O` now opens a full-screen view of every persisted JSON option. Successful edits apply on the UI loop and save immediately; folder paths are validated, `LastDirectory` navigates the browser, and the optional `StartupDirectory` takes priority on a pathless launch. Runtime FFT-size changes rebuild the spectrum analyzer, and mute now has an idempotent setter. Added settings-controller, full-screen rendering, startup-directory persistence, and FFT-reconfiguration regressions. `dotnet build Yacplayer.sln -c Release --no-restore` succeeded with 0 warnings/0 errors and `dotnet test Yacplayer.sln -c Release --no-build` passed 38/38 tests. Manual TUI input, path editing, WASAPI changes, and restart behavior remain unverified; no binary artifacts were rebuilt and the change remains uncommitted.
 
 - Beat-cat easter egg added on 2026-11-05: the Realtime Audio beat row now alternates between `=^o.o^=` on the predicted beat and `=^-.-^=` between beats. Renderer coverage asserts both states. Focused whitespace verification succeeded; Release build completed with 0 warnings/0 errors and all 34/34 tests passed. Manual in-terminal rhythm timing remains unverified; the change is intentionally left uncommitted at the user's request.
 - Predictive BPM tracker added on 2026-11-05: replaced broadband RMS-difference tempo detection with a 1024-sample/256-hop multi-band spectral-flux onset envelope, interpolated 55–200 BPM autocorrelation candidates, phase coverage scoring, and a bounded eight-agent PLL bank with confidence decay and switching hysteresis. The Beat indicator now follows predicted phase and survives short missing-beat sections. Added synthetic coverage for 97/127/173 BPM grid refinement, missing beats, and a 120→150 BPM change. Focused whitespace verification succeeded; Release build completed with 0 warnings/0 errors and all 34/34 tests passed. Accuracy, lock behavior, and CPU cost on a representative real-music corpus remain manually unverified; release binaries were not rebuilt.

@@ -12,7 +12,7 @@ Priority meanings: **P0** blocks a supported release or risks incorrect behavior
 |---|---|---|---|
 | Roadmap | Portability | The application targets `net10.0-windows` and uses WASAPI | Published Linux/macOS binaries are not usable players |
 | P1 | Concurrency | The sample ring has unclear ownership of its read cursor | Lost, duplicated, or inconsistent visualization samples are possible |
-| P1 | Spectrum | Partial FFT windows are consumed and then discarded | Flicker, intermittent empty frames, and wasted work |
+| P2 | Spectrum | The last valid spectrum has no elapsed-time decay | Bars can remain stale while playback is paused or samples stop arriving |
 | P1 | Rendering | A new cell array and ANSI output are allocated every frame | Avoidable GC and CPU load, especially at 60 FPS |
 | P1 | Library loading | Startup and `A` recursive scans still materialize the full result | Slow startup or a temporarily unresponsive UI on very large trees |
 | P2 | Realtime analysis | The causal multi-hypothesis tracker is not validated on a representative music corpus | Several-second lock time and possible metrical-level errors remain |
@@ -35,11 +35,11 @@ Recommended action: add generated-WAV integration tests, an optional Windows WAS
 
 ## Performance and resource use
 
-### P1 — partial FFT windows are discarded
+### P2 — spectrum decay is frame-driven
 
-`SpectrumAnalyzer.Analyze` calls `Read` for a full FFT buffer. When fewer samples are available, those samples have already been removed before the method clears the bands and returns. At a UI rate close to or above the rate at which full windows arrive, this can repeatedly starve the analyzer and visibly flash the spectrum.
+`SpectrumAnalyzer` now uses an exact-window read: partial FFT windows remain queued and the last valid bands remain visible until a complete replacement window exists. This prevents 60 FPS and 4096-bin modes from starving the analyzer. The remaining gap is that stale bands do not decay according to elapsed time when playback is paused or samples stop arriving.
 
-Recommended action: expose an availability check or exact-window read that consumes nothing until a complete window exists. Alternatively maintain a DSP-side accumulation buffer. Preserve the last valid spectrum and apply time-based decay instead of immediately drawing silence.
+Recommended action: track monotonic time since the last complete FFT window and apply a time-based decay independently of UI FPS.
 
 ### P1 — per-frame terminal allocations
 
@@ -161,7 +161,7 @@ A platform should not be marked supported until it can open all documented codec
 |---|---|---|---|
 | Roadmap | Портируемость | Цель `net10.0-windows`, вывод через WASAPI | Сборки Linux/macOS не являются рабочими плеерами |
 | P1 | Конкурентность | У курсора чтения кольцевого буфера нет одного владельца | Возможна потеря или несогласованность данных визуализации |
-| P1 | Спектр | Неполные FFT-окна считываются и выбрасываются | Мигание, пустые кадры и лишняя работа |
+| P2 | Спектр | Последний корректный спектр не имеет затухания по времени | При паузе или прекращении samples столбцы могут оставаться устаревшими |
 | P1 | Рендеринг | На каждом кадре создаются массив ячеек и ANSI-строка | Лишние GC и CPU, особенно при 60 FPS |
 | P1 | Медиатека | Startup и recursive scan по `A` всё ещё материализуют полный результат | Медленный запуск или временно неотзывчивый UI на очень больших деревьях |
 | P2 | Realtime-анализ | Causal multi-hypothesis tracker не проверен на репрезентативном музыкальном корпусе | Сохраняются несколько секунд захвата и возможные ошибки метрического уровня |
@@ -184,11 +184,11 @@ Unit-тесты не используют реальное аудиоустро�
 
 ## Производительность и ресурсы
 
-### P1 — выбрасываются неполные FFT-окна
+### P2 — затухание спектра зависит от кадров
 
-`SpectrumAnalyzer.Analyze` запрашивает полный FFT-буфер. Если данных меньше, они уже удалены из ring, после чего bands очищаются. При неудачном соотношении UI FPS и скорости накопления это постоянно обнуляет спектр и вызывает мигание.
+`SpectrumAnalyzer` теперь использует exact-window read: неполные FFT-окна остаются в очереди, а последние корректные bands сохраняются до появления полного следующего окна. Это устраняет starvation анализатора при 60 FPS и 4096 bins. Оставшийся пробел: при паузе или прекращении samples устаревшие bands не затухают по прошедшему времени.
 
-Решение: exact-window read, который ничего не потребляет без полного окна, либо накопительный DSP-буфер. При нехватке данных сохранять последний валидный спектр и применять зависящее от времени затухание.
+Решение: отслеживать monotonic time с последнего полного FFT-окна и применять time-based decay независимо от UI FPS.
 
 ### P1 — выделения памяти на каждом кадре
 
