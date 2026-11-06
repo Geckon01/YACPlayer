@@ -13,9 +13,12 @@ internal readonly record struct AppRenderState(
     PlaybackSnapshot Playback,
     VisualizationFrame Visualization,
     BrowserViewState Browser,
+    SettingsViewState SettingsMenu,
     bool BrowserVisible,
     bool HelpVisible,
-    string Message);
+    string Message,
+    bool ExitConfirmationVisible = false,
+    bool ExitConfirmationYesSelected = false);
 
 internal sealed class AppRenderer
 {
@@ -23,10 +26,18 @@ internal sealed class AppRenderer
     private readonly ListViewport _browserViewport = new();
     private readonly ListViewport _queueViewport = new();
     private readonly ListViewport _browserQueueViewport = new();
+    private readonly ListViewport _settingsViewport = new();
 
     public ScreenBuffer Draw(int width, int height, AppRenderState state)
     {
         var screen = new ScreenBuffer(width, height);
+        if (state.SettingsMenu.Visible)
+        {
+            DrawSettings(screen, width, height, state);
+            DrawExitConfirmationIfVisible(screen, width, height, state);
+            return screen;
+        }
+
         DrawBox(screen, 0, 0, width - 1, 2, " Yacplayer ", CellColor.Green);
         if (width >= VersionLabel.Length + 16)
         {
@@ -45,6 +56,7 @@ internal sealed class AppRenderer
         if (state.BrowserVisible)
         {
             DrawBrowser(screen, width, height, state);
+            DrawExitConfirmationIfVisible(screen, width, height, state);
             return screen;
         }
 
@@ -65,15 +77,125 @@ internal sealed class AppRenderer
 
         var footer = state.HelpVisible
             ? "Esc Close help"
-            : "Hotkeys: [Space] Play/Pause | [Left/Right] Seek | [Up/Down] Select | [F] Files | [S] Shuffle | [R] Repeat | [B] Analysis | [Q] Quit | [?] Help";
+            : "Hotkeys: [Space] Play/Pause | [Left/Right] Seek | [F] Files | [O] Settings | [S] Shuffle | [R] Repeat | [B] Analysis | [Q] Quit | [?] Help";
         screen.Write(0, height - 1, Fit(footer, width), CellColor.Green, bold: true);
         if (state.HelpVisible)
         {
             DrawHelp(screen, width, height);
         }
 
+        DrawExitConfirmationIfVisible(screen, width, height, state);
+
         return screen;
     }
+
+    private static void DrawExitConfirmationIfVisible(
+        ScreenBuffer screen,
+        int width,
+        int height,
+        AppRenderState state)
+    {
+        if (!state.ExitConfirmationVisible || width < 20 || height < 8)
+        {
+            return;
+        }
+
+        var dialogWidth = Math.Min(44, width - 4);
+        var left = (width - dialogWidth) / 2;
+        var right = left + dialogWidth - 1;
+        var top = Math.Max(1, (height - 7) / 2);
+        var bottom = Math.Min(height - 2, top + 6);
+
+        for (var y = top; y <= bottom; y++)
+        {
+            screen.Write(left, y, new string(' ', dialogWidth));
+        }
+
+        DrawBox(screen, left, top, right, bottom, " Exit ", CellColor.Green);
+        var prompt = "Sure exit?";
+        screen.Write(left + Math.Max(2, (dialogWidth - prompt.Length) / 2), top + 2, prompt, CellColor.White, bold: true);
+
+        var yesX = left + dialogWidth / 2 - 10;
+        var noX = left + dialogWidth / 2 + 3;
+        DrawDialogChoice(screen, yesX, top + 4, " Yep ", state.ExitConfirmationYesSelected);
+        DrawDialogChoice(screen, noX, top + 4, " Nope ", !state.ExitConfirmationYesSelected);
+    }
+
+    private static void DrawDialogChoice(ScreenBuffer screen, int x, int y, string label, bool selected)
+    {
+        screen.Write(
+            x,
+            y,
+            $"[{label}]",
+            selected ? CellColor.Black : CellColor.White,
+            selected ? CellBackground.BrightGreen : CellBackground.Default,
+            selected);
+    }
+
+    private void DrawSettings(ScreenBuffer screen, int width, int height, AppRenderState state)
+    {
+        DrawBox(screen, 0, 0, width - 1, height - 2, " Settings [O] ", CellColor.Green);
+        screen.Write(3, 2, Fit("Changes apply and save immediately", width - 6), CellColor.Cyan, bold: true);
+
+        var listTop = 4;
+        var listRows = Math.Max(1, height - 9);
+        _settingsViewport.EnsureVisible(
+            state.SettingsMenu.SelectedIndex,
+            SettingsController.Items.Count,
+            listRows);
+        for (var row = 0; row < listRows; row++)
+        {
+            var index = _settingsViewport.Offset + row;
+            if (index >= SettingsController.Items.Count)
+            {
+                break;
+            }
+
+            var item = SettingsController.Items[index];
+            var selected = index == state.SettingsMenu.SelectedIndex;
+            var marker = selected ? ">" : " ";
+            var label = $"{marker} {SettingsController.DisplayName(item),-22} : {FormatSettingValue(item, state.Settings)}";
+            screen.Write(
+                3,
+                listTop + row,
+                Fit(label, width - 6),
+                selected ? CellColor.Black : CellColor.Default,
+                selected ? CellBackground.Green : CellBackground.Default,
+                selected);
+        }
+
+        if (state.SettingsMenu.EditingPath)
+        {
+            screen.Write(3, height - 4, Fit($"Path: {state.SettingsMenu.EditBuffer}_", width - 6), CellColor.Yellow, bold: true);
+            screen.Write(3, height - 3, Fit("Enter Apply | Esc Cancel | Backspace Delete", width - 6), CellColor.Cyan);
+        }
+        else
+        {
+            screen.Write(3, height - 4, Fit(state.SettingsMenu.Message, width - 6), CellColor.Yellow);
+            screen.Write(3, height - 3, Fit("Up/Down Select | Left/Right Change | Enter Edit | O/Esc Close", width - 6), CellColor.Cyan);
+        }
+
+        screen.Write(0, height - 1, Fit("Settings are stored in %LOCALAPPDATA%\\Yacplayer\\settings.json", width), CellColor.Green, bold: true);
+    }
+
+    private static string FormatSettingValue(SettingsItem item, PlayerSettings settings) => item switch
+    {
+        SettingsItem.Volume => $"{settings.Volume}%",
+        SettingsItem.Muted => OnOff(settings.Muted),
+        SettingsItem.Fps => $"{settings.Fps} FPS",
+        SettingsItem.FftSize => $"{settings.FftSize} bins",
+        SettingsItem.VisualizerMode => settings.VisualizerMode.ToString(),
+        SettingsItem.RealtimeAnalysis => OnOff(settings.RealtimeAnalysisEnabled),
+        SettingsItem.RepeatMode => settings.RepeatMode.ToString(),
+        SettingsItem.Shuffle => OnOff(settings.Shuffle),
+        SettingsItem.Recursive => OnOff(settings.Recursive),
+        SettingsItem.LastDirectory => string.IsNullOrEmpty(settings.LastDirectory) ? "(not set)" : settings.LastDirectory,
+        SettingsItem.StartupDirectory => string.IsNullOrEmpty(settings.StartupDirectory) ? "Last browser folder" : settings.StartupDirectory,
+        SettingsItem.SchemaVersion => settings.Version.ToString(),
+        _ => ""
+    };
+
+    private static string OnOff(bool value) => value ? "On" : "Off";
 
     private void DrawWidePlayer(
         ScreenBuffer screen,
@@ -396,7 +518,7 @@ internal sealed class AppRenderer
             DrawBrowserQueue(screen, width, top, bottom, split, playlist);
         }
 
-        screen.Write(1, height - 2, Fit(" Enter Open/Play   Backspace Parent   A Add   F/Esc Close   Q Quit", width - 2), CellColor.Cyan);
+        screen.Write(1, height - 2, Fit(" Enter Open/Play   Backspace Parent   A Add   O Settings   F/Esc Close   Q Quit", width - 2), CellColor.Cyan);
         screen.Write(1, height - 1, Fit(state.Message, width - 2));
     }
 
@@ -471,7 +593,7 @@ internal sealed class AppRenderer
 
         screen.Write(4, 3, "KEYS: Space pause  X stop  N/P next/prev  Left/Right seek");
         screen.Write(4, 4, "+/- volume  M mute  Enter play  Del remove  S shuffle");
-        screen.Write(4, 5, "R repeat  V visualizer  B realtime analysis  Q quit  Esc close");
+        screen.Write(4, 5, "R repeat  V visualizer  B realtime analysis  O settings  Q quit  Esc close");
     }
 
     private static string VisualizerTitle(VisualizerMode mode) => mode switch

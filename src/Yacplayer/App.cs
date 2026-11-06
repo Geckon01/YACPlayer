@@ -16,6 +16,8 @@ public sealed class App(Arguments arguments)
     private string _message = "Ready";
     private bool _helpVisible;
     private bool _browserVisible;
+    private bool _exitConfirmationVisible;
+    private bool _exitConfirmationYesSelected;
 
     public async Task<int> RunAsync(CancellationToken ct)
     {
@@ -33,6 +35,7 @@ public sealed class App(Arguments arguments)
         using var browser = new BrowserController(_playlist, _settings, browserPath);
         using var metadata = new CurrentTrackMetadataLoader();
         var visualization = new VisualizationPipeline(_settings);
+        var settingsMenu = new SettingsController(_settings);
         var audioEvents = new AudioEventQueue();
         using var audio = new AudioEngine(
             visualization.VisualizationRing,
@@ -65,7 +68,7 @@ public sealed class App(Arguments arguments)
 
             while (Console.KeyAvailable)
             {
-                if (!await HandleAsync(Console.ReadKey(true), audio, browser, ct))
+                if (!await HandleAsync(Console.ReadKey(true), audio, browser, settingsMenu, ct))
                 {
                     goto done;
                 }
@@ -86,9 +89,12 @@ public sealed class App(Arguments arguments)
                 playback,
                 visualizationFrame,
                 browser.View,
+                settingsMenu.View,
                 _browserVisible,
                 _helpVisible,
-                _message);
+                _message,
+                _exitConfirmationVisible,
+                _exitConfirmationYesSelected);
             var screen = renderer.Draw(width, height, state);
             terminal.Render(screen.Diff(previous));
             previous = screen;
@@ -144,16 +150,25 @@ public sealed class App(Arguments arguments)
 
     private string ResolveStartupPath()
     {
-        var start = arguments.Path
-            ?? (!string.IsNullOrEmpty(_settings.LastDirectory)
-                ? _settings.LastDirectory
-                : Environment.CurrentDirectory);
+        var start = arguments.Path ?? ResolveConfiguredStartupDirectory();
         if (Directory.Exists(start))
         {
             _settings.LastDirectory = start;
         }
 
         return start;
+    }
+
+    private string ResolveConfiguredStartupDirectory()
+    {
+        if (!string.IsNullOrEmpty(_settings.StartupDirectory))
+        {
+            return _settings.StartupDirectory;
+        }
+
+        return !string.IsNullOrEmpty(_settings.LastDirectory)
+            ? _settings.LastDirectory
+            : Environment.CurrentDirectory;
     }
 
     private async Task LoadStartupQueueAsync(string start, CancellationToken ct)
@@ -172,11 +187,7 @@ public sealed class App(Arguments arguments)
     private void ConfigureAudio(AudioEngine audio, string start)
     {
         audio.SetVolume(_settings.Volume);
-        if (_settings.Muted)
-        {
-            audio.ToggleMute();
-        }
-
+        audio.SetMuted(_settings.Muted);
         audio.SetRealtimeAnalysis(_settings.RealtimeAnalysisEnabled);
         if (File.Exists(start) && _playlist.Items.Count > 0)
         {
@@ -189,8 +200,26 @@ public sealed class App(Arguments arguments)
         ConsoleKeyInfo key,
         AudioEngine audio,
         BrowserController browser,
+        SettingsController settingsMenu,
         CancellationToken ct)
     {
+        if (_exitConfirmationVisible)
+        {
+            return HandleExitConfirmationKey(key);
+        }
+
+        if (key.Key == ConsoleKey.Q && !settingsMenu.View.EditingPath)
+        {
+            _exitConfirmationVisible = true;
+            _exitConfirmationYesSelected = false;
+            return true;
+        }
+
+        if (settingsMenu.View.Visible)
+        {
+            return await HandleSettingsKeyAsync(key, audio, browser, settingsMenu, ct);
+        }
+
         if (_helpVisible)
         {
             if (key.Key is ConsoleKey.Escape or ConsoleKey.Oem2)
@@ -198,6 +227,13 @@ public sealed class App(Arguments arguments)
                 _helpVisible = false;
             }
 
+            return true;
+        }
+
+        if (key.Key == ConsoleKey.O)
+        {
+            CaptureRuntimeSettings(audio);
+            settingsMenu.Open();
             return true;
         }
 
@@ -209,6 +245,86 @@ public sealed class App(Arguments arguments)
         return HandlePlayerKey(key, audio, browser, ct);
     }
 
+    private bool HandleExitConfirmationKey(ConsoleKeyInfo key)
+    {
+        switch (key.Key)
+        {
+            case ConsoleKey.LeftArrow:
+                _exitConfirmationYesSelected = true;
+                break;
+            case ConsoleKey.RightArrow:
+                _exitConfirmationYesSelected = false;
+                break;
+            case ConsoleKey.UpArrow:
+            case ConsoleKey.DownArrow:
+            case ConsoleKey.Tab:
+                _exitConfirmationYesSelected = !_exitConfirmationYesSelected;
+                break;
+            case ConsoleKey.Y:
+                return false;
+            case ConsoleKey.N:
+            case ConsoleKey.Escape:
+                _exitConfirmationVisible = false;
+                break;
+            case ConsoleKey.Enter:
+                if (_exitConfirmationYesSelected)
+                {
+                    return false;
+                }
+
+                _exitConfirmationVisible = false;
+                break;
+        }
+
+        return true;
+    }
+
+    private async Task<bool> HandleSettingsKeyAsync(
+        ConsoleKeyInfo key,
+        AudioEngine audio,
+        BrowserController browser,
+        SettingsController settingsMenu,
+        CancellationToken ct)
+    {
+        var interaction = settingsMenu.Handle(key);
+        if (!string.IsNullOrEmpty(interaction.Message))
+        {
+            _message = interaction.Message;
+        }
+
+        if (!interaction.Changed)
+        {
+            return true;
+        }
+
+        ApplyRuntimeSettings(audio);
+        if (interaction.BrowserDirectoryChanged)
+        {
+            _message = browser.StartLoad(_settings.LastDirectory, ct);
+        }
+
+        try
+        {
+            await _store.SaveAsync(_settings, CancellationToken.None);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _message = $"Setting applied, but could not be saved: {ex.Message}";
+            settingsMenu.Report(_message);
+        }
+
+        return true;
+    }
+
+    private void ApplyRuntimeSettings(AudioEngine audio)
+    {
+        audio.SetVolume(_settings.Volume);
+        audio.SetMuted(_settings.Muted);
+        audio.SetRealtimeAnalysis(_settings.RealtimeAnalysisEnabled);
+        _playlist.SetRepeat(_settings.RepeatMode);
+        _playlist.SetShuffle(_settings.Shuffle);
+    }
+
     private async Task<bool> HandleBrowserKeyAsync(
         ConsoleKeyInfo key,
         AudioEngine audio,
@@ -217,8 +333,6 @@ public sealed class App(Arguments arguments)
     {
         switch (key.Key)
         {
-            case ConsoleKey.Q:
-                return false;
             case ConsoleKey.F:
             case ConsoleKey.Escape:
                 _browserVisible = false;
@@ -257,8 +371,6 @@ public sealed class App(Arguments arguments)
     {
         switch (key.Key)
         {
-            case ConsoleKey.Q:
-                return false;
             case ConsoleKey.Spacebar:
                 audio.TogglePause();
                 break;
