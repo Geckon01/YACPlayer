@@ -1,13 +1,57 @@
-using NAudio.Wave; using NAudio.Wave.SampleProviders; using Yacplayer.Audio; using Yacplayer.Dsp; using Yacplayer.Library;
+using NAudio.Wave;
+using NAudio.Wave.SampleProviders;
+using Yacplayer.Audio;
+using Yacplayer.Dsp;
+using Yacplayer.Library;
 namespace Yacplayer.Tests;
+
 public class DspAndMetadataTests
 {
-    [Fact] public void SpectrumIsFiniteForSilenceAndTone()
+    [Fact]
+    public void SpectrumIsFiniteForSilenceAndTone()
     {
-        const int size=2048, rate=48000; var ring=new SampleRingBuffer(size*2); var analyzer=new SpectrumAnalyzer(ring,size); var bands=new float[24]; ring.Write(new float[size]); Assert.True(analyzer.Analyze(rate,bands)); Assert.All(bands,v=>Assert.True(float.IsFinite(v)));
-        var tone=Enumerable.Range(0,size).Select(i=>(float)Math.Sin(2*Math.PI*1000*i/rate)).ToArray(); ring.Write(tone); Assert.True(analyzer.Analyze(rate,bands)); Assert.True(bands.Max()>0); Assert.All(bands,v=>Assert.InRange(v,0,1));
+        const int size = 2048, rate = 48000; var ring = new SampleRingBuffer(size * 2); var analyzer = new SpectrumAnalyzer(ring, size); var bands = new float[24]; ring.Write(new float[size]); Assert.True(analyzer.Analyze(rate, bands)); Assert.All(bands, v => Assert.True(float.IsFinite(v)));
+        var tone = Enumerable.Range(0, size).Select(i => (float)Math.Sin(2 * Math.PI * 1000 * i / rate)).ToArray(); ring.Write(tone); Assert.True(analyzer.Analyze(rate, bands)); Assert.True(bands.Max() > 0); Assert.All(bands, v => Assert.InRange(v, 0, 1));
     }
-    [Fact] public void PcmTapCapturesSamplesBeforeOutputVolume()
+
+    [Theory]
+    [InlineData(2048)]
+    [InlineData(4096)]
+    public void SpectrumAccumulatesPartialWindowsAcrossFpsChanges(int fftSize)
+    {
+        const int sampleRate = 48000;
+        var frameSizes = new[] { sampleRate / 60, sampleRate / 30 };
+        var ring = new SampleRingBuffer(fftSize * 2);
+        var analyzer = new SpectrumAnalyzer(ring, fftSize);
+        var bands = Enumerable.Repeat(0.25f, 24).ToArray();
+        var written = 0;
+        var frame = 0;
+
+        while (written + frameSizes[frame % frameSizes.Length] < fftSize)
+        {
+            var samplesPerFrame = frameSizes[frame % frameSizes.Length];
+            ring.Write(CreateTone(samplesPerFrame, written, sampleRate));
+            written += samplesPerFrame;
+            frame++;
+
+            Assert.False(analyzer.Analyze(sampleRate, bands));
+            Assert.All(bands, value => Assert.Equal(0.25f, value));
+        }
+
+        var remaining = fftSize - written;
+        ring.Write(CreateTone(remaining, written, sampleRate));
+
+        Assert.True(analyzer.Analyze(sampleRate, bands));
+        Assert.True(bands.Max() > 0.25f);
+        Assert.Equal(0, ring.Count);
+    }
+
+    private static float[] CreateTone(int count, int offset, int sampleRate) =>
+        Enumerable.Range(0, count)
+            .Select(index => (float)Math.Sin(2 * Math.PI * 1000 * (index + offset) / sampleRate))
+            .ToArray();
+    [Fact]
+    public void PcmTapCapturesSamplesBeforeOutputVolume()
     {
         var source = new ArraySampleProvider([0.8f, -0.4f]); var ring = new SampleRingBuffer(8); var tap = new PcmTapSampleProvider(source, ring); var volume = new VolumeSampleProvider(tap) { Volume = 0.25f }; var output = new float[2];
         Assert.Equal(2, volume.Read(output)); Assert.Equal([0.2f, -0.1f], output);
@@ -119,18 +163,20 @@ public class DspAndMetadataTests
         Assert.True(after.BeatConfidence >= 0.3f);
     }
 
-    [Fact] public async Task MetadataUsesFallbacksForMissingFile()
+    [Fact]
+    public async Task MetadataUsesFallbacksForMissingFile()
     {
-        var path=System.IO.Path.Combine(System.IO.Path.GetTempPath(),Guid.NewGuid()+".mp3");
-        var metadata=await MetadataService.LoadAsync(path);
-        Assert.Equal(System.IO.Path.GetFileNameWithoutExtension(path),metadata.Title);
-        Assert.Equal("Unknown artist",metadata.Artist);
-        Assert.Equal("",metadata.Album);
-        Assert.Equal(TimeSpan.Zero,metadata.Duration);
+        var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), Guid.NewGuid() + ".mp3");
+        var metadata = await MetadataService.LoadAsync(path);
+        Assert.Equal(System.IO.Path.GetFileNameWithoutExtension(path), metadata.Title);
+        Assert.Equal("Unknown artist", metadata.Artist);
+        Assert.Equal("", metadata.Album);
+        Assert.Equal(TimeSpan.Zero, metadata.Duration);
     }
-    [Fact] public async Task BrowserSortsDirectoriesFirstAndFilters()
+    [Fact]
+    public async Task BrowserSortsDirectoriesFirstAndFilters()
     {
-        var dir=Directory.CreateTempSubdirectory(); try { Directory.CreateDirectory(System.IO.Path.Combine(dir.FullName,"z")); await File.WriteAllBytesAsync(System.IO.Path.Combine(dir.FullName,"a.wav"),[]); await File.WriteAllTextAsync(System.IO.Path.Combine(dir.FullName,"b.txt"),""); var entries=await FileBrowser.EnumerateAsync(dir.FullName); Assert.True(entries[0].IsDirectory); Assert.Equal(2,entries.Count); } finally { dir.Delete(true); }
+        var dir = Directory.CreateTempSubdirectory(); try { Directory.CreateDirectory(System.IO.Path.Combine(dir.FullName, "z")); await File.WriteAllBytesAsync(System.IO.Path.Combine(dir.FullName, "a.wav"), []); await File.WriteAllTextAsync(System.IO.Path.Combine(dir.FullName, "b.txt"), ""); var entries = await FileBrowser.EnumerateAsync(dir.FullName); Assert.True(entries[0].IsDirectory); Assert.Equal(2, entries.Count); } finally { dir.Delete(true); }
     }
 
     [Fact]

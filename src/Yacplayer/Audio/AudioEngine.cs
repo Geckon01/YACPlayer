@@ -134,11 +134,13 @@ public sealed class AudioEngine : IDisposable
         ApplyVolume();
     }
 
-    public void ToggleMute()
+    public void SetMuted(bool value)
     {
-        _muted = !_muted;
+        _muted = value;
         ApplyVolume();
     }
+
+    public void ToggleMute() => SetMuted(!_muted);
 
     public void SetRealtimeAnalysis(bool enabled)
     {

@@ -22,6 +22,7 @@ public sealed class PlayerSettings
     public bool Shuffle { get; set; }
     public bool Recursive { get; set; }
     public string LastDirectory { get; set; } = "";
+    public string StartupDirectory { get; set; } = "";
 
     public void Validate()
     {
@@ -48,9 +49,17 @@ public sealed class PlayerSettings
             RepeatMode = RepeatMode.Off;
         }
 
+        LastDirectory ??= "";
+        StartupDirectory ??= "";
+
         if (LastDirectory.Length > 0 && !Directory.Exists(LastDirectory))
         {
             LastDirectory = "";
+        }
+
+        if (StartupDirectory.Length > 0 && !Directory.Exists(StartupDirectory))
+        {
+            StartupDirectory = "";
         }
     }
 }

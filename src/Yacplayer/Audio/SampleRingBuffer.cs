@@ -1,4 +1,5 @@
 namespace Yacplayer.Audio;
+
 public sealed class SampleRingBuffer
 {
     private readonly float[] _data; private long _write; private long _read;
@@ -13,6 +14,24 @@ public sealed class SampleRingBuffer
     {
         var read = Volatile.Read(ref _read); var available = (int)Math.Min(destination.Length, Math.Max(0, Volatile.Read(ref _write) - read));
         for (var i = 0; i < available; i++) destination[i] = _data[(int)((read + i) % Capacity)]; Volatile.Write(ref _read, read + available); return available;
+    }
+
+    public bool TryReadExact(Span<float> destination)
+    {
+        var read = Volatile.Read(ref _read);
+        var write = Volatile.Read(ref _write);
+        if (write - read < destination.Length)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < destination.Length; index++)
+        {
+            destination[index] = _data[(int)((read + index) % Capacity)];
+        }
+
+        Volatile.Write(ref _read, read + destination.Length);
+        return true;
     }
     public int ReadLatest(Span<float> destination)
     {

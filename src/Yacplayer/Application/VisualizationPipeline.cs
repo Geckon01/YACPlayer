@@ -14,12 +14,13 @@ internal sealed class VisualizationPipeline
 {
     private readonly SampleRingBuffer _visualizationRing = new(32768);
     private readonly SampleRingBuffer _analysisRing = new(65536);
-    private readonly SpectrumAnalyzer _spectrumAnalyzer;
+    private SpectrumAnalyzer _spectrumAnalyzer;
     private readonly RealtimeAudioAnalyzer _realtimeAnalyzer;
     private readonly float[] _bands = new float[64];
     private readonly float[] _rawBands = new float[64];
     private readonly float[] _waveform = new float[4096];
     private int _waveformCount;
+    private int _activeFftSize;
     private VisualizerMode _activeMode;
     private long _analysisGeneration;
     private RealtimeAudioSnapshot _realtimeAudio = RealtimeAudioSnapshot.Empty;
@@ -28,11 +29,13 @@ internal sealed class VisualizationPipeline
     {
         _spectrumAnalyzer = new(_visualizationRing, settings.FftSize);
         _realtimeAnalyzer = new(_analysisRing);
+        _activeFftSize = settings.FftSize;
         _activeMode = settings.VisualizerMode;
     }
 
     public SampleRingBuffer VisualizationRing => _visualizationRing;
     public SampleRingBuffer AnalysisRing => _analysisRing;
+    internal int ActiveFftSize => _activeFftSize;
 
     public void InitializeAnalysisGeneration(long generation)
     {
@@ -45,7 +48,7 @@ internal sealed class VisualizationPipeline
         long analysisGeneration)
     {
         UpdateRealtimeAudio(playback, settings, analysisGeneration);
-        UpdateVisualizer(playback, settings.VisualizerMode);
+        UpdateVisualizer(playback, settings);
         return new(_bands, _waveform, _waveformCount, _realtimeAudio);
     }
 
@@ -75,8 +78,18 @@ internal sealed class VisualizationPipeline
         }
     }
 
-    private void UpdateVisualizer(PlaybackSnapshot playback, VisualizerMode mode)
+    private void UpdateVisualizer(PlaybackSnapshot playback, PlayerSettings settings)
     {
+        var mode = settings.VisualizerMode;
+        if (_activeFftSize != settings.FftSize)
+        {
+            _activeFftSize = settings.FftSize;
+            _spectrumAnalyzer = new(_visualizationRing, settings.FftSize);
+            _visualizationRing.Reset();
+            Array.Clear(_rawBands);
+            Array.Clear(_bands);
+        }
+
         if (_activeMode != mode)
         {
             _activeMode = mode;
