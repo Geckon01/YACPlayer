@@ -79,7 +79,20 @@ public class TrackEnergyTests
             loudTheme = loud.Update(LoudFeatures(), true, ReactiveUiMode.Visualizer, frame * 80L, map, 32);
         }
 
-        Assert.True(loudTheme.Pulse > baselineTheme.Pulse * 1.4);
+        Assert.True(loudTheme.Pulse > baselineTheme.Pulse * 1.3);
+
+        // Five seconds before the drop the capped anticipation sits between the
+        // quiet intro and the full chorus: building, but never stealing the peak.
+        var anticipating = new ReactiveThemeController(timeScale: 1000);
+        ReactiveTheme anticipateTheme = default;
+        for (var frame = 0; frame <= 100; frame++)
+        {
+            anticipateTheme = anticipating.Update(
+                LoudFeatures(), true, ReactiveUiMode.Visualizer, frame * 80L, map, 25);
+        }
+
+        Assert.True(anticipateTheme.Pulse > calmTheme.Pulse * 1.1);
+        Assert.True(anticipateTheme.Pulse < loudTheme.Pulse * 0.85);
 
         // After the chorus ends the drama glides back down over seconds.
         ReactiveTheme after = loudTheme;

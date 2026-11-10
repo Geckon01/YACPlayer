@@ -52,6 +52,7 @@ internal sealed class ReactiveThemeController
     private double _saturation = 0.82;
     private double _drama = 1;
     private bool _arrangementActive;
+    private TrackEnergyMap? _arrangement;
     private ReactiveTheme _current;
 
     public ReactiveThemeController(double timeScale = 1.0)
@@ -138,16 +139,39 @@ internal sealed class ReactiveThemeController
             : 1 - Math.Exp(-dt / (visualizer ? 0.28 : 0.38));
         _bass += (bassTarget - _bass) * alpha;
 
-        _arrangementActive = reacting && arrangement is not null;
-        if (_arrangementActive)
+        var arrangementActive = reacting && arrangement is not null;
+        if (arrangementActive)
         {
             var (_, lift, approach, intensity) = arrangement!.Sample(Math.Max(0, positionSeconds));
-            var eventLevel = Math.Clamp(Math.Max(lift, approach) / 5d, 0, 1);
-            var dramaTarget = Math.Clamp(0.45 * intensity + 0.55 * eventLevel, 0, 1);
-            var dramaAlpha = dramaTarget > _drama
-                ? 1 - Math.Exp(-dt / 1.5)
-                : 1 - Math.Exp(-dt / 4.0);
-            _drama += (dramaTarget - _drama) * dramaAlpha;
+            // The upcoming-section signal is capped below the live lift so the
+            // seconds before a drop build anticipation without spending the
+            // chorus's headroom: only the section itself reaches full drama.
+            var anticipation = 0.6 * Math.Clamp(approach / 5d, 0, 1);
+            var liftLevel = Math.Clamp(lift / 5d, 0, 1);
+            var dramaTarget = Math.Clamp(0.30 * intensity + 0.70 * Math.Max(liftLevel, anticipation), 0, 1);
+            if (!(_arrangementActive && ReferenceEquals(arrangement, _arrangement)))
+            {
+                // First sample of a map: bind instantly to the section level
+                // instead of flashing from a stale or default value.
+                _arrangement = arrangement;
+                _arrangementActive = true;
+                _drama = dramaTarget;
+            }
+            else
+            {
+                // Slow build into a section and a slow hold once it is here:
+                // the lift stays valid while the past window trails the loud
+                // blocks, so long choruses do not sag mid-section.
+                var dramaAlpha = dramaTarget > _drama
+                    ? 1 - Math.Exp(-dt / 3.0)
+                    : 1 - Math.Exp(-dt / 8.0);
+                _drama += (dramaTarget - _drama) * dramaAlpha;
+            }
+        }
+        else
+        {
+            _arrangementActive = false;
+            _arrangement = null;
         }
 
         var hueSpeed = _arrangementActive ? 0.55 + 0.75 * _drama : 1;
