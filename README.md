@@ -109,6 +109,7 @@ When stdin or stdout is redirected, the interactive TUI is not started. The proc
 | `R` | Repeat Off → All → One |
 | `V` | Spectrum → Waveform → Off; the panel title follows the active mode |
 | `B` | Toggle the realtime audio-analysis panel and its calculations |
+| `T` | Cycle the music-reactive UI theme Off → Subtle → Visualizer |
 | `F` | Open the file browser |
 | `O` | Open the full-screen settings menu |
 | `?` | Open the in-application help |
@@ -157,6 +158,7 @@ Settings file: `%LOCALAPPDATA%\Yacplayer\settings.json`.
   "FftSize": 2048,
   "VisualizerMode": "Spectrum",
   "RealtimeAnalysisEnabled": true,
+  "ReactiveUiMode": "Off",
   "RepeatMode": "Off",
   "Shuffle": false,
   "Recursive": false,
@@ -166,6 +168,8 @@ Settings file: `%LOCALAPPDATA%\Yacplayer\settings.json`.
 ```
 
 Press `O` to edit every persisted option in a full-screen menu. Use Up/Down to select, Left/Right (or `+`/`-`) to change a value, and Enter to edit folder paths. Valid changes affect the running player and are written immediately. `StartupDirectory` is the fixed folder used when launching without a path; leave it empty to fall back to `LastDirectory`. Changing `LastDirectory` also opens that folder in the active browser.
+
+The optional music-reactive UI (`T` or the `Reactive UI` settings entry) slowly shifts panel border/title/accent colors from live audio features: bass energy drives brightness pulses, spectral centroid steers a limited green-teal hue range, and overall RMS modulates saturation. `Off` (the default) keeps the static theme and performs no extra work; `Subtle` is the gentle default mode and `Visualizer` reacts more strongly. Colors glide back to the static theme while paused or stopped.
 
 Validation covers the volume range, FPS (`30`/`60`), FFT size (`2048`/`4096`), enum values, and existence of both directory paths. Malformed JSON is moved to `settings.json.bad`, then defaults are used. Saving writes `settings.json.tmp` before replacing the target. Explicit CLI options override settings for the current run.
 

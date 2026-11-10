@@ -10,6 +10,7 @@ internal enum SettingsItem
     Fps,
     FftSize,
     VisualizerMode,
+    ReactiveUiMode,
     RealtimeAnalysis,
     RepeatMode,
     Shuffle,
@@ -129,6 +130,9 @@ internal sealed class SettingsController(PlayerSettings settings)
             case SettingsItem.VisualizerMode:
                 settings.VisualizerMode = Cycle(settings.VisualizerMode, direction);
                 break;
+            case SettingsItem.ReactiveUiMode:
+                settings.ReactiveUiMode = Cycle(settings.ReactiveUiMode, direction);
+                break;
             case SettingsItem.RealtimeAnalysis:
                 settings.RealtimeAnalysisEnabled = !settings.RealtimeAnalysisEnabled;
                 break;
@@ -247,6 +251,7 @@ internal sealed class SettingsController(PlayerSettings settings)
         SettingsItem.Fps => "UI frame rate",
         SettingsItem.FftSize => "FFT size",
         SettingsItem.VisualizerMode => "Visualizer",
+        SettingsItem.ReactiveUiMode => "Reactive UI",
         SettingsItem.RealtimeAnalysis => "Realtime analysis",
         SettingsItem.RepeatMode => "Repeat mode",
         SettingsItem.Shuffle => "Shuffle",

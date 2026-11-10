@@ -64,11 +64,13 @@ internal sealed class VisualizationPipeline
             _realtimeAudio = RealtimeAudioSnapshot.Empty;
         }
 
-        if (settings.RealtimeAnalysisEnabled && playback.State == PlaybackState.Playing)
+        var analysisNeeded = settings.RealtimeAnalysisEnabled
+            || settings.ReactiveUiMode != ReactiveUiMode.Off;
+        if (analysisNeeded && playback.State == PlaybackState.Playing)
         {
             _realtimeAudio = _realtimeAnalyzer.Analyze(playback.SampleRate);
         }
-        else if (!settings.RealtimeAnalysisEnabled)
+        else if (!analysisNeeded)
         {
             _realtimeAudio = RealtimeAudioSnapshot.Empty;
         }

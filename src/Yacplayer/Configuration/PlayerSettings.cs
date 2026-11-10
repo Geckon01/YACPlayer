@@ -9,6 +9,13 @@ public enum VisualizerMode
     Off
 }
 
+public enum ReactiveUiMode
+{
+    Off,
+    Subtle,
+    Visualizer
+}
+
 public sealed class PlayerSettings
 {
     public int Version { get; set; } = 1;
@@ -18,6 +25,7 @@ public sealed class PlayerSettings
     public int FftSize { get; set; } = 2048;
     public VisualizerMode VisualizerMode { get; set; } = VisualizerMode.Spectrum;
     public bool RealtimeAnalysisEnabled { get; set; } = true;
+    public ReactiveUiMode ReactiveUiMode { get; set; } = ReactiveUiMode.Off;
     public RepeatMode RepeatMode { get; set; }
     public bool Shuffle { get; set; }
     public bool Recursive { get; set; }
@@ -42,6 +50,11 @@ public sealed class PlayerSettings
         if (!Enum.IsDefined(VisualizerMode))
         {
             VisualizerMode = VisualizerMode.Spectrum;
+        }
+
+        if (!Enum.IsDefined(ReactiveUiMode))
+        {
+            ReactiveUiMode = ReactiveUiMode.Off;
         }
 
         if (!Enum.IsDefined(RepeatMode))

@@ -70,6 +70,7 @@ xUnit, Microsoft.NET.Test.Sdk, coverlet, and the VS xUnit runner are test-only d
 | `Application/VisualizationPipeline.cs` | Spectrum/waveform/realtime-analysis coordination and reset rules |
 | `Application/SettingsController.cs` | Full-screen settings navigation, value changes, and path validation |
 | `Presentation/AppRenderer.cs` | Player/browser/settings layouts, viewports, and `ScreenBuffer` composition |
+| `Presentation/ReactiveThemeController.cs` | Feature smoothing and bounded HSL color derivation for the music-reactive UI |
 | `Cli/Arguments.cs` | Deterministic command-line parser and help text |
 | `Configuration/` | Persisted settings and atomic JSON storage |
 | `Library/Playlist.cs` | Queue selection, navigation, repeat, shuffle bag/history |
@@ -258,17 +259,17 @@ The UI does not receive decoder/output objects. `PlaybackSnapshot` exposes state
 
 `PcmTapSampleProvider` forwards decoded samples while also copying mono data to the visualization ring and, only while enabled, a separate analysis ring. `VolumeSampleProvider` follows the tap, so output volume and mute affect WASAPI playback but do not alter visualization or analysis. Mono input is written in one block; multichannel frames are averaged across channels.
 
-The tap does not perform FFT, tempo estimation, logging, JSON, metadata, or terminal I/O. `AudioEngine.SetRealtimeAnalysis(false)` gates the secondary ring write and resets its transport generation; `App` then stops invoking `RealtimeAudioAnalyzer` as well as hiding its panel.
+The tap does not perform FFT, tempo estimation, logging, JSON, metadata, or terminal I/O. `AudioEngine.SetRealtimeAnalysis(false)` gates the secondary ring write and resets its transport generation; `App` then stops invoking `RealtimeAudioAnalyzer` as well as hiding its panel. `AudioEngine.SetReactiveAnalysis(true)` additionally keeps the analysis ring fed (`PcmTapSampleProvider.AnalysisAlways`) while the realtime panel is off, because the music-reactive UI consumes the same features; the expensive UI-side analyzer call remains gated on panel-or-theme need.
 
-`SampleRingBuffer` owns a fixed `float[]` and monotonically increasing read/write counters with modulo addressing. On overflow, the producer advances the minimum read position so the oldest visualization samples are discarded. `Reset` moves read to the current write position after stop, seek, track change, or visualizer-mode change. `ReadLatest` copies the newest block and discards older backlog for the waveform.
+`SampleRingBuffer` owns a fixed `float[]` (rounded up to a power of two) and monotonically increasing read/write counters with bitmask addressing. The producer owns only `_write`; the consumer owns `_read` and, on overflow, catches itself up to `write - capacity` before copying so the oldest samples are dropped without the producer ever writing the read cursor. `Reset` moves read to the current write position after stop, seek, track change, or visualizer-mode change. `ReadLatest` copies the newest block and discards older backlog for the waveform.
 
-`RealtimeAudioAnalyzer` runs on the UI loop. It derives RMS and peak dBFS, crest factor, zero-crossing rate, spectral centroid, and dominant frequency from bounded windows. Tempo analysis uses a 1024-sample Hann STFT with a 256-sample hop. Positive log-magnitude changes are averaged into low, mid, and high bands and normalized against an adaptive flux baseline to form the onset envelope.
+`RealtimeAudioAnalyzer` runs on the UI loop. It derives RMS and peak dBFS, crest factor, zero-crossing rate, spectral centroid, dominant frequency, and a normalized low-band (40–150 Hz) bass-energy feature from bounded windows. Tempo analysis uses a 1024-sample Hann STFT with a 256-sample hop. Positive log-magnitude changes are averaged into low, mid, and high bands and normalized against an adaptive flux baseline to form the onset envelope.
 
 `BeatTracker` retains a bounded onset history. Normalized autocorrelation searches 55–200 BPM, parabolic peak interpolation removes integer-hop quantization, and phase scoring penalizes hypotheses that predict unsupported beats or explain too little onset energy. Up to eight tempo/phase agents are retained. Salient onsets update every agent through a proportional/integral phase-locked loop; evidence decay, confidence, continuity bias, and switching hysteresis select the active agent. The displayed beat is generated from its predicted phase, so it can continue through a short missing-beat section instead of merely echoing an energy transient. A broad prior prefers common metrical levels around 120 BPM while retaining candidates across the full range.
 
 The result remains a causal realtime estimate rather than embedded BPM metadata or an offline whole-track analysis. It needs several seconds to lock, deliberately trades responsiveness for stability, and can still choose a different metrical level for syncopated, changing, or ambiguous material.
 
-The intended concurrency model is one producer and one consumer. The present volatile-counter implementation is not claimed as a formally proven lock-free algorithm; producer and consumer can both update `_read` during overflow, which is a hardening target.
+The concurrency model is one producer (the audio callback, owning `_write`) and one consumer (the UI loop, owning `_read`). The overflow catch-up runs entirely on the consumer side, so neither cursor is ever written by both threads; this replaced the earlier protocol where producer overflow also advanced `_read`, which could rewind the consumer under a check-then-act interleaving. Concurrent producer/consumer regression tests cover overflow, `ReadLatest`/`Reset` interleavings, and the stale-cursor clamp.
 
 ## 12. DSP pipeline
 
@@ -320,6 +321,10 @@ Current caveat: a new `ScreenBuffer`, cell array, `StringBuilder`, and ANSI stri
 - At `width >= 90` and `height >= 22`, it draws Now Playing, Queue, Spectrum, Playback, and Audio Info panels.
 - Smaller terminals use compact Now Playing and Spectrum panels.
 - Browser width ≥70 shows files and queue; narrower terminals show files only.
+
+### Music-reactive UI theme
+
+`ReactiveThemeController` (UI loop only) converts smoothed music features into a bounded color scheme for panel borders, green panel-title backgrounds, the active queue-row background, and the footer. Bass energy drives a brightness pulse (single-pole attack ≈ 70 ms, release 350–450 ms, bounded to roughly the 10–20% luminance range), spectral centroid maps logarithmically to a limited green-teal hue band (not the full wheel) with a 2–3 s time constant, and RMS modulates saturation around the static green. Updates are gated to about 12.5 FPS independent of the UI/FFT rate. When `ReactiveUiMode` is `Off` (the default) the controller no-ops and the renderer keeps its static ANSI theme; when playback is not playing or features are unavailable, parameters glide back to the base theme through the release path rather than snapping. Colors are emitted as RGB true-color SGR sequences (the spectrum already requires true color); terminals without true-color support see the same sequences and may downgrade them, which matches the existing spectrum behavior. No geometry, layout, informational text, or semantically meaningful colors change.
 
 ## 14. Input routing
 

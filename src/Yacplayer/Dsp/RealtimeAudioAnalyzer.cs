@@ -14,7 +14,8 @@ public readonly record struct RealtimeAudioSnapshot(
     float DominantFrequencyHz,
     float Bpm,
     float BeatConfidence,
-    bool BeatDetected)
+    bool BeatDetected,
+    float BassEnergy)
 {
     public static RealtimeAudioSnapshot Empty => new(
         false,
@@ -26,7 +27,8 @@ public readonly record struct RealtimeAudioSnapshot(
         0,
         0,
         0,
-        false);
+        false,
+        0);
 }
 
 public sealed class RealtimeAudioAnalyzer
@@ -250,13 +252,20 @@ public sealed class RealtimeAudioAnalyzer
         double weightedFrequency = 0;
         double dominantMagnitude = 0;
         var dominantFrequency = 0d;
+        double bassMagnitude = 0;
         var minimumBin = Math.Max(1, (int)Math.Ceiling(40d * MetricsFftSize / _sampleRate));
+        var bassBin = Math.Min(MetricsFftSize / 2, (int)(150d * MetricsFftSize / _sampleRate));
         for (var bin = minimumBin; bin < MetricsFftSize / 2; bin++)
         {
             var magnitude = _metricsFft[bin].Magnitude;
             var frequency = bin * (double)_sampleRate / MetricsFftSize;
             magnitudeSum += magnitude;
             weightedFrequency += magnitude * frequency;
+            if (bin < bassBin)
+            {
+                bassMagnitude += magnitude;
+            }
+
             if (magnitude > dominantMagnitude)
             {
                 dominantMagnitude = magnitude;
@@ -276,7 +285,17 @@ public sealed class RealtimeAudioAnalyzer
             (float)dominantFrequency,
             _beatTracker.Bpm,
             _beatTracker.Confidence,
-            _beatTracker.BeatDetected);
+            _beatTracker.BeatDetected,
+            (float)NormalizeBass(bassMagnitude));
+    }
+
+    private static double NormalizeBass(double bassMagnitude)
+    {
+        // Per-bin log compression so the 0..1 feature is independent of FFT size and
+        // the exact number of low-frequency bins at the current sample rate.
+        var binCount = Math.Max(1, (int)(150d * MetricsFftSize / 48000d));
+        var average = bassMagnitude / binCount;
+        return Math.Clamp(Math.Log10(1 + average) / 1.2, 0, 1);
     }
 
     private static double Average(double value, int count) => count == 0 ? 0 : value / count;

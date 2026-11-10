@@ -8,6 +8,7 @@ public sealed class PcmTapSampleProvider(
     SampleRingBuffer? analysisRing = null) : ISampleProvider
 {
     private volatile bool _analysisEnabled;
+    private volatile bool _analysisAlways;
 
     public WaveFormat WaveFormat => source.WaveFormat;
 
@@ -15,6 +16,17 @@ public sealed class PcmTapSampleProvider(
     {
         get => _analysisEnabled;
         set => _analysisEnabled = value;
+    }
+
+    /// <summary>
+    /// Keeps the analysis ring fed even while the panel is off, for consumers that
+    /// share the same PCM features (the reactive UI). The expensive UI-side analysis
+    /// call remains gated by its own caller.
+    /// </summary>
+    public bool AnalysisAlways
+    {
+        get => _analysisAlways;
+        set => _analysisAlways = value;
     }
 
     public int Read(Span<float> buffer)
@@ -25,7 +37,7 @@ public sealed class PcmTapSampleProvider(
         {
             var samples = buffer[..read];
             visualizationRing.Write(samples);
-            if (_analysisEnabled)
+            if (_analysisEnabled || _analysisAlways)
             {
                 analysisRing?.Write(samples);
             }
@@ -43,7 +55,7 @@ public sealed class PcmTapSampleProvider(
 
                 one[0] = mono / channels;
                 visualizationRing.Write(one);
-                if (_analysisEnabled)
+                if (_analysisEnabled || _analysisAlways)
                 {
                     analysisRing?.Write(one);
                 }

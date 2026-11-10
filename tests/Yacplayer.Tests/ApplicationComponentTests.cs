@@ -35,7 +35,8 @@ public class ApplicationComponentTests
             440,
             120,
             0.8f,
-            true);
+            true,
+            0);
         var visualization = new VisualizationFrame(new float[64], new float[4096], 0, analysis);
         var browser = new BrowserViewState("C:\\Music", [], 0, false);
         var hiddenSettings = new SettingsViewState(false, 0, false, "", "");

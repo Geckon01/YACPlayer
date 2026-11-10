@@ -17,6 +17,7 @@ public sealed class AudioEngine : IDisposable
     private int _volume = 75;
     private bool _muted;
     private bool _realtimeAnalysisEnabled;
+    private bool _reactiveAnalysisEnabled;
     private volatile bool _intentional;
     private long _generation;
     private long _analysisGeneration;
@@ -60,7 +61,8 @@ public sealed class AudioEngine : IDisposable
             _reader = new(path);
             _tap = new PcmTapSampleProvider(_reader, _ring, _analysisRing)
             {
-                AnalysisEnabled = _realtimeAnalysisEnabled
+                AnalysisEnabled = _realtimeAnalysisEnabled,
+                AnalysisAlways = _reactiveAnalysisEnabled
             };
             _volumeProvider = new(_tap);
             ApplyVolume();
@@ -153,6 +155,23 @@ public sealed class AudioEngine : IDisposable
         if (_tap is not null)
         {
             _tap.AnalysisEnabled = enabled;
+        }
+
+        ResetAnalysisTransport();
+    }
+
+    /// <summary>Keeps the analysis ring fed for the reactive UI while its panel is off.</summary>
+    public void SetReactiveAnalysis(bool enabled)
+    {
+        if (_reactiveAnalysisEnabled == enabled)
+        {
+            return;
+        }
+
+        _reactiveAnalysisEnabled = enabled;
+        if (_tap is not null)
+        {
+            _tap.AnalysisAlways = enabled;
         }
 
         ResetAnalysisTransport();

@@ -18,7 +18,8 @@ internal readonly record struct AppRenderState(
     bool HelpVisible,
     string Message,
     bool ExitConfirmationVisible = false,
-    bool ExitConfirmationYesSelected = false);
+    bool ExitConfirmationYesSelected = false,
+    ReactiveTheme ReactiveTheme = default);
 
 internal sealed class AppRenderer
 {
@@ -27,9 +28,11 @@ internal sealed class AppRenderer
     private readonly ListViewport _queueViewport = new();
     private readonly ListViewport _browserQueueViewport = new();
     private readonly ListViewport _settingsViewport = new();
+    private ReactiveTheme _theme;
 
     public ScreenBuffer Draw(int width, int height, AppRenderState state)
     {
+        _theme = state.ReactiveTheme;
         var screen = new ScreenBuffer(width, height);
         if (state.SettingsMenu.Visible)
         {
@@ -77,8 +80,8 @@ internal sealed class AppRenderer
 
         var footer = state.HelpVisible
             ? "Esc Close help"
-            : "Hotkeys: [Space] Play/Pause | [Left/Right] Seek | [F] Files | [O] Settings | [S] Shuffle | [R] Repeat | [B] Analysis | [Q] Quit | [?] Help";
-        screen.Write(0, height - 1, Fit(footer, width), CellColor.Green, bold: true);
+            : "Hotkeys: [Space] Play/Pause | [Left/Right] Seek | [F] Files | [O] Settings | [S] Shuffle | [R] Repeat | [B] Analysis | [T] Reactive UI | [Q] Quit | [?] Help";
+        screen.Write(0, height - 1, Fit(footer, width), _theme.Active ? _theme.AccentText : CellColor.Green, bold: true);
         if (state.HelpVisible)
         {
             DrawHelp(screen, width, height);
@@ -89,7 +92,7 @@ internal sealed class AppRenderer
         return screen;
     }
 
-    private static void DrawExitConfirmationIfVisible(
+    private void DrawExitConfirmationIfVisible(
         ScreenBuffer screen,
         int width,
         int height,
@@ -121,7 +124,7 @@ internal sealed class AppRenderer
         DrawDialogChoice(screen, noX, top + 4, " Nope ", !state.ExitConfirmationYesSelected);
     }
 
-    private static void DrawDialogChoice(ScreenBuffer screen, int x, int y, string label, bool selected)
+    private void DrawDialogChoice(ScreenBuffer screen, int x, int y, string label, bool selected)
     {
         screen.Write(
             x,
@@ -185,6 +188,7 @@ internal sealed class AppRenderer
         SettingsItem.Fps => $"{settings.Fps} FPS",
         SettingsItem.FftSize => $"{settings.FftSize} bins",
         SettingsItem.VisualizerMode => settings.VisualizerMode.ToString(),
+        SettingsItem.ReactiveUiMode => settings.ReactiveUiMode.ToString(),
         SettingsItem.RealtimeAnalysis => OnOff(settings.RealtimeAnalysisEnabled),
         SettingsItem.RepeatMode => settings.RepeatMode.ToString(),
         SettingsItem.Shuffle => OnOff(settings.Shuffle),
@@ -252,12 +256,14 @@ internal sealed class AppRenderer
                 5 + row,
                 Fit(text, width - queueLeft - 4),
                 active ? CellColor.Black : selected ? CellColor.Yellow : CellColor.Default,
-                active ? CellBackground.Green : CellBackground.Default,
+                active
+                    ? _theme.Active ? _theme.RowBackground : CellBackground.Green
+                    : CellBackground.Default,
                 active);
         }
     }
 
-    private static void DrawBottomPanels(
+    private void DrawBottomPanels(
         ScreenBuffer screen,
         int queueLeft,
         int infoTop,
@@ -280,7 +286,7 @@ internal sealed class AppRenderer
         }
     }
 
-    private static void DrawPlaybackPanel(
+    private void DrawPlaybackPanel(
         ScreenBuffer screen,
         int left,
         int right,
@@ -297,7 +303,7 @@ internal sealed class AppRenderer
         screen.Write(left + 3, top + 5, Fit("Output   : WASAPI shared", width));
     }
 
-    private static void DrawAudioInfoPanel(
+    private void DrawAudioInfoPanel(
         ScreenBuffer screen,
         int left,
         int right,
@@ -313,7 +319,7 @@ internal sealed class AppRenderer
         screen.Write(left + 3, top + 5, Fit($"Duration    : {playback.Duration:mm\\:ss}", width), CellColor.Green);
     }
 
-    private static void DrawRealtimeAudioPanel(
+    private void DrawRealtimeAudioPanel(
         ScreenBuffer screen,
         int left,
         int right,
@@ -593,7 +599,7 @@ internal sealed class AppRenderer
 
         screen.Write(4, 3, "KEYS: Space pause  X stop  N/P next/prev  Left/Right seek");
         screen.Write(4, 4, "+/- volume  M mute  Enter play  Del remove  S shuffle");
-        screen.Write(4, 5, "R repeat  V visualizer  B realtime analysis  O settings  Q quit  Esc close");
+        screen.Write(4, 5, "R repeat  V visualizer  B realtime analysis  T reactive UI  O settings  Q quit  Esc close");
     }
 
     private static string VisualizerTitle(VisualizerMode mode) => mode switch
@@ -607,7 +613,7 @@ internal sealed class AppRenderer
         ? $"{value / 1000:0.00} kHz"
         : $"{value:0} Hz";
 
-    private static void DrawBox(
+    private void DrawBox(
         ScreenBuffer screen,
         int left,
         int top,
@@ -615,7 +621,7 @@ internal sealed class AppRenderer
         int bottom,
         string title) => DrawBox(screen, left, top, right, bottom, title, CellColor.Cyan);
 
-    private static void DrawBox(
+    private void DrawBox(
         ScreenBuffer screen,
         int left,
         int top,
@@ -629,11 +635,18 @@ internal sealed class AppRenderer
             return;
         }
 
-        var borderColor = color == CellColor.Green ? CellColor.BrightGreen : color;
+        var reactive = color == CellColor.Green && _theme.Active;
+        var borderColor = reactive ? _theme.Border : color == CellColor.Green ? CellColor.BrightGreen : color;
         screen.Write(left, top, "+" + new string('-', right - left - 1) + "+", borderColor);
         if (color == CellColor.Green)
         {
-            screen.Write(left + 2, top, title, CellColor.White, CellBackground.BrightGreen, true);
+            screen.Write(
+                left + 2,
+                top,
+                title,
+                CellColor.White,
+                reactive ? _theme.TitleBackground : CellBackground.BrightGreen,
+                true);
         }
         else
         {

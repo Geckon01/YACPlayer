@@ -70,6 +70,7 @@ Test-only dependencies: xUnit, Microsoft.NET.Test.Sdk, coverlet collector, xUnit
 | `Application/VisualizationPipeline.cs` | Координация spectrum/waveform/realtime analysis и reset rules |
 | `Application/SettingsController.cs` | Навигация полноэкранных настроек, изменение значений и проверка путей |
 | `Presentation/AppRenderer.cs` | Player/browser/settings layouts, viewports и композиция `ScreenBuffer` |
+| `Presentation/ReactiveThemeController.cs` | Сглаживание характеристик и вывод ограниченных HSL-цветов для музыкально-реактивного UI |
 | `Cli/Arguments.cs` | Ручной детерминированный parser CLI и статический help text |
 | `Configuration/` | Persisted settings и атомарное JSON-хранилище |
 | `Library/Playlist.cs` | Queue navigation, selection, repeat, shuffle bag/history |
@@ -296,21 +297,20 @@ UI не получает decoder/output напрямую. `PlaybackSnapshot` с�
 - mono input копируется в ring блоком;
 - multi-channel input downmix-ится средним арифметическим каналов на frame;
 - tap не выполняет FFT, tempo estimation, logging, JSON, metadata или terminal I/O;
-- `AudioEngine.SetRealtimeAnalysis(false)` прекращает запись во второй ring и меняет transport generation; `App` прекращает вызывать `RealtimeAudioAnalyzer` и скрывает панель.
+- `AudioEngine.SetRealtimeAnalysis(false)` прекращает запись во второй ring и меняет transport generation; `App` прекращает вызывать `RealtimeAudioAnalyzer` и скрывает панель;
+- `AudioEngine.SetReactiveAnalysis(true)` дополнительно держит analysis ring наполненным (`PcmTapSampleProvider.AnalysisAlways`), даже когда realtime-панель выключена, потому что музыкально-реактивный UI потребляет те же характеристики; дорогой UI-side вызов анализатора по-прежнему гейтится потребностью панели или темы.
 
-`RealtimeAudioAnalyzer` выполняется в UI-loop. Из ограниченных окон он получает RMS и peak dBFS, crest factor, zero-crossing rate, spectral centroid и dominant frequency. Для анализа темпа используется Hann STFT на 1024 samples с hop 256 samples. Положительный прирост log-magnitude усредняется по низкому, среднему и высокому диапазонам и нормализуется относительно адаптивного baseline spectral flux, формируя onset envelope.
+`RealtimeAudioAnalyzer` выполняется в UI-loop. Из ограниченных окон он получает RMS и peak dBFS, crest factor, zero-crossing rate, spectral centroid, dominant frequency и нормализованную характеристику энергии низких частот (40–150 Гц). Для анализа темпа используется Hann STFT на 1024 samples с hop 256 samples. Положительный прирост log-magnitude усредняется по низкому, среднему и высокому диапазонам и нормализуется относительно адаптивного baseline spectral flux, формируя onset envelope.
 
 `BeatTracker` хранит ограниченную историю onsets. Normalized autocorrelation ищет 55–200 BPM, parabolic peak interpolation устраняет квантование по целому hop, а phase scoring штрафует гипотезы, предсказывающие неподтверждённые доли или объясняющие слишком малую часть onset energy. Одновременно сохраняется до восьми tempo/phase agents. Выраженные onsets корректируют каждый agent через proportional/integral PLL; evidence decay, confidence, continuity bias и switching hysteresis выбирают активный agent. Отображаемый beat строится из предсказанной phase, поэтому продолжается через короткие пропуски ударов, а не просто повторяет energy transient. Широкий prior предпочитает распространённые метрические уровни около 120 BPM, сохраняя кандидатов во всём диапазоне.
 
 Результат остаётся causal realtime-оценкой, а не embedded BPM metadata или offline-анализом всего трека. Для захвата требуется несколько секунд; стабильность намеренно приоритетнее мгновенной реакции, а синкопированный, меняющийся или неоднозначный материал всё ещё может привести к выбору другого метрического уровня.
 
-`SampleRingBuffer` имеет фиксированный `float[]`, monotonically increasing `_write`/`_read` counters и modulo addressing.
-
-Overflow policy: после записи writer двигает minimum read position к `write - Capacity`, то есть самые старые samples теряются. Это осознанный приоритет: устаревший spectrum отбрасывается вместо блокировки audio path.
+`SampleRingBuffer` имеет фиксированный `float[]` (округлённый вверх до степени двойки), monotonically increasing `_write`/`_read` counters и bitmask addressing. Producer владеет только `_write`; consumer владеет `_read` и при overflow сам подтягивает свою позицию до `write - capacity` перед копированием, поэтому самые старые samples теряются, а writer никогда не пишет курсор чтения.
 
 `Reset` при stop/seek/track switch или смене режима приравнивает read position текущему write position, чтобы DSP не показал старый PCM. `ReadLatest` копирует новейший блок и отбрасывает backlog для waveform.
 
-Текущая реализация использует `Volatile.Read/Write`, но не заявляет формально доказанную lock-free корректность для произвольного числа readers/writers. Предполагаемая модель — один producer и один consumer.
+Модель конкурентности — один producer (audio callback, владеет `_write`) и один consumer (UI-loop, владеет `_read`). Catch-up при overflow выполняется полностью на стороне consumer, поэтому ни один курсор не пишется обеими сторонами; это заменило прежний протокол, где overflow producer тоже двигал `_read`, что при чередовании check-then-act могло откатить consumer. Конкурентные regression-тесты producer/consumer покрывают overflow, чередования `ReadLatest`/`Reset` и clamp устаревшей позиции.
 
 ## 12. DSP pipeline
 
@@ -395,6 +395,10 @@ Browser layout:
 
 - при width ≥ 70: files слева, queue справа;
 - при меньшей ширине: одна files panel.
+
+### Музыкально-реактивная тема UI
+
+`ReactiveThemeController` (только UI-loop) преобразует сглаженные музыкальные характеристики в ограниченную цветовую схему для рамок панелей, фонов зелёных заголовков панелей, фона активной строки очереди и футера. Энергия баса управляет пульсацией яркости (single-pole attack ≈ 70 мс, release 350–450 мс, ограничение примерно диапазоном 10–20% светлоты), spectral centroid логарифмически отображается в ограниченный зелёно-бирюзовый диапазон оттенка (не полный цветовой круг) с постоянной времени 2–3 с, а RMS модулирует насыщенность вокруг статического зелёного. Обновления гейтятся примерно 12.5 FPS независимо от частоты UI/FFT. Когда `ReactiveUiMode` = `Off` (значение по умолчанию), контроллер ничего не выполняет, и рендерер сохраняет статическую ANSI-тему; когда воспроизведение не активно или характеристики недоступны, параметры плавно возвращаются к базовой теме через путь release, а не переключаются скачком. Цвета выводятся как RGB true-color SGR-последовательности (спектр уже требует true color); терминалы без true-color видят те же последовательности и могут понижать их — это соответствует существующему поведению спектра. Геометрия, layout, информационный текст и семантически значимые цвета не меняются.
 
 ## 14. Input routing
 

@@ -19,8 +19,20 @@ public readonly record struct CellColor(int AnsiCode, byte R, byte G, byte B, bo
     public static CellColor Rgb(int red, int green, int blue) => new(0, (byte)Math.Clamp(red, 0, 255), (byte)Math.Clamp(green, 0, 255), (byte)Math.Clamp(blue, 0, 255), true);
     internal void AppendEscape(StringBuilder output) => output.Append(IsRgb ? $"\u001b[38;2;{R};{G};{B}m" : $"\u001b[{AnsiCode}m");
 }
-public enum CellBackground { Default = 49, Black = 40, Green = 42, BrightGreen = 102 }
-public readonly record struct Cell(char Character, CellColor Color, CellBackground Background = CellBackground.Default, bool Bold = false);
+public readonly record struct CellBackground(int AnsiCode, byte R, byte G, byte B, bool IsRgb)
+{
+    private CellBackground(int ansiCode) : this(ansiCode, 0, 0, 0, false) { }
+    // The zero value is the default background; the private constructor above assigns explicit palette codes.
+    public static CellBackground Default => default;
+    public static CellBackground Black { get; } = new(40);
+    public static CellBackground Green { get; } = new(42);
+    public static CellBackground BrightGreen { get; } = new(102);
+    public static CellBackground Rgb(int red, int green, int blue) => new(0, (byte)Math.Clamp(red, 0, 255), (byte)Math.Clamp(green, 0, 255), (byte)Math.Clamp(blue, 0, 255), true);
+    internal void AppendEscape(StringBuilder output) => output.Append(IsRgb
+        ? $"\u001b[48;2;{R};{G};{B}m"
+        : AnsiCode == 0 ? "\u001b[49m" : $"\u001b[{AnsiCode}m");
+}
+public readonly record struct Cell(char Character, CellColor Color, CellBackground Background = default, bool Bold = false);
 
 public sealed class ScreenBuffer
 {
@@ -36,7 +48,7 @@ public sealed class ScreenBuffer
     public int Height { get; }
     public void Clear() => Array.Fill(_cells, new Cell(' ', CellColor.Default));
     public void Write(int x, int y, string? text) => Write(x, y, text, CellColor.Default);
-    public void Write(int x, int y, string? text, CellColor color, CellBackground background = CellBackground.Default, bool bold = false)
+    public void Write(int x, int y, string? text, CellColor color, CellBackground background = default, bool bold = false)
     {
         if (text is null || y < 0 || y >= Height) return;
         foreach (var raw in text)
@@ -72,7 +84,7 @@ public sealed class ScreenBuffer
 
                 output.Append($"\u001b[{y + 1};{x + 1}H");
                 if (cell.Color != activeColor) { cell.Color.AppendEscape(output); activeColor = cell.Color; }
-                if (cell.Background != activeBackground) { output.Append($"\u001b[{(int)cell.Background}m"); activeBackground = cell.Background; }
+                if (cell.Background != activeBackground) { cell.Background.AppendEscape(output); activeBackground = cell.Background; }
                 if (cell.Bold != activeBold) { output.Append(cell.Bold ? "\u001b[1m" : "\u001b[22m"); activeBold = cell.Bold; }
 
                 var runStyle = cell;

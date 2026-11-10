@@ -56,6 +56,7 @@ public sealed class App(Arguments arguments)
 
         visualization.InitializeAnalysisGeneration(audio.AnalysisGeneration);
         var renderer = new AppRenderer();
+        var reactiveTheme = new ReactiveThemeController();
         using var terminal = new TerminalSession();
         ScreenBuffer? previous = null;
         while (!ct.IsCancellationRequested)
@@ -83,6 +84,11 @@ public sealed class App(Arguments arguments)
             _message = metadata.ApplyCompletions() ?? _message;
             var playback = audio.Snapshot;
             var visualizationFrame = visualization.Update(playback, _settings, audio.AnalysisGeneration);
+            var theme = reactiveTheme.Update(
+                visualizationFrame.RealtimeAudio,
+                playback.State == PlaybackState.Playing,
+                _settings.ReactiveUiMode,
+                Environment.TickCount64);
             var state = new AppRenderState(
                 _playlist,
                 _settings,
@@ -94,7 +100,8 @@ public sealed class App(Arguments arguments)
                 _helpVisible,
                 _message,
                 _exitConfirmationVisible,
-                _exitConfirmationYesSelected);
+                _exitConfirmationYesSelected,
+                theme);
             var screen = renderer.Draw(width, height, state);
             terminal.Render(screen.Diff(previous));
             previous = screen;
@@ -189,6 +196,7 @@ public sealed class App(Arguments arguments)
         audio.SetVolume(_settings.Volume);
         audio.SetMuted(_settings.Muted);
         audio.SetRealtimeAnalysis(_settings.RealtimeAnalysisEnabled);
+        audio.SetReactiveAnalysis(_settings.ReactiveUiMode != ReactiveUiMode.Off);
         if (File.Exists(start) && _playlist.Items.Count > 0)
         {
             _playlist.Play(0);
@@ -321,6 +329,7 @@ public sealed class App(Arguments arguments)
         audio.SetVolume(_settings.Volume);
         audio.SetMuted(_settings.Muted);
         audio.SetRealtimeAnalysis(_settings.RealtimeAnalysisEnabled);
+        audio.SetReactiveAnalysis(_settings.ReactiveUiMode != ReactiveUiMode.Off);
         _playlist.SetRepeat(_settings.RepeatMode);
         _playlist.SetShuffle(_settings.Shuffle);
     }
@@ -426,6 +435,9 @@ public sealed class App(Arguments arguments)
             case ConsoleKey.B:
                 ToggleRealtimeAnalysis(audio);
                 break;
+            case ConsoleKey.T:
+                ToggleReactiveUi(audio);
+                break;
             case ConsoleKey.F:
                 _browserVisible = true;
                 _message = browser.View.AtDrives
@@ -467,6 +479,13 @@ public sealed class App(Arguments arguments)
         _settings.RealtimeAnalysisEnabled = !_settings.RealtimeAnalysisEnabled;
         audio.SetRealtimeAnalysis(_settings.RealtimeAnalysisEnabled);
         _message = $"Realtime audio analysis {(_settings.RealtimeAnalysisEnabled ? "on" : "off")}";
+    }
+
+    private void ToggleReactiveUi(AudioEngine audio)
+    {
+        _settings.ReactiveUiMode = (ReactiveUiMode)(((int)_settings.ReactiveUiMode + 1) % 3);
+        audio.SetReactiveAnalysis(_settings.ReactiveUiMode != ReactiveUiMode.Off);
+        _message = $"Reactive UI {_settings.ReactiveUiMode}";
     }
 
     private void ProcessAudioEvents(AudioEngine audio, AudioEventQueue events)
