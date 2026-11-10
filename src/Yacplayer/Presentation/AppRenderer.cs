@@ -44,7 +44,12 @@ internal sealed class AppRenderer
         DrawBox(screen, 0, 0, width - 1, 2, " Yacplayer ", CellColor.Green);
         if (width >= VersionLabel.Length + 16)
         {
-            screen.Write(width - VersionLabel.Length - 2, 0, VersionLabel, CellColor.White, CellBackground.BrightGreen, bold: true);
+            // Easter egg: with the reactive theme on, the version flashes a new
+            // color on each predicted beat and fades back to white between beats.
+            var versionColor = _theme.Active
+                ? ReactiveThemeController.VersionColor(_theme.VersionHue, _theme.VersionGlow)
+                : CellColor.White;
+            screen.Write(width - VersionLabel.Length - 2, 0, VersionLabel, versionColor, CellBackground.BrightGreen, bold: true);
         }
 
         var playback = state.Playback;

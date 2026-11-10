@@ -206,6 +206,65 @@ public class ReactiveThemeTests
     }
 
     [Fact]
+    public void VersionLabelFlashesNewColorOnEachBeatAndFadesBetweenBeats()
+    {
+        var controller = new ReactiveThemeController();
+        var beatFeatures = Features() with { BeatDetected = true };
+
+        var onBeat = controller.Update(beatFeatures, true, ReactiveUiMode.Subtle, 0);
+        Assert.Equal(1d, onBeat.VersionGlow);
+        var firstHue = onBeat.VersionHue;
+
+        // Between beats the flash decays toward the base white and reaches it.
+        var between = controller.Update(Features(), true, ReactiveUiMode.Subtle, 600);
+        Assert.True(between.VersionGlow < onBeat.VersionGlow);
+
+        controller.Update(Features(), true, ReactiveUiMode.Subtle, 1200);
+        controller.Update(Features(), true, ReactiveUiMode.Subtle, 1800);
+        controller.Update(Features(), true, ReactiveUiMode.Subtle, 2400);
+        var offBeat = controller.Update(Features(), true, ReactiveUiMode.Subtle, 3000);
+        Assert.Equal(0d, offBeat.VersionGlow);
+
+        // The next predicted beat flashes with a different color.
+        var secondBeat = controller.Update(beatFeatures, true, ReactiveUiMode.Subtle, 3600);
+        Assert.Equal(1d, secondBeat.VersionGlow);
+        Assert.NotEqual(firstHue, secondBeat.VersionHue);
+    }
+
+    [Fact]
+    public void VersionColorFadesToWhiteAndOffModeNeverFlashes()
+    {
+        var flash = ReactiveThemeController.VersionColor(210, 1);
+        Assert.True(flash.R < 200); // saturated blue, not white
+        var rested = ReactiveThemeController.VersionColor(210, 0);
+        Assert.True(rested.R >= 250 && rested.R == rested.G && rested.G == rested.B);
+
+        var controller = new ReactiveThemeController();
+        var off = controller.Update(Features() with { BeatDetected = true }, true, ReactiveUiMode.Off, 0);
+        Assert.Equal(0d, off.VersionGlow);
+    }
+
+    [Fact]
+    public void RendererTintsVersionLabelWithThemeGlow()
+    {
+        var playlist = new Playlist();
+        var playback = new PlaybackSnapshot(PlaybackState.Playing, "a.mp3", default, default, 48000, 2, 75, false);
+        var frame = new VisualizationFrame(new float[64], new float[4096], 0, RealtimeAudioSnapshot.Empty);
+        var browser = new BrowserViewState("C:\\", [], 0, false);
+        var hiddenMenu = new SettingsViewState(false, 0, false, "", "");
+        var renderer = new AppRenderer();
+
+        var controller = new ReactiveThemeController();
+        var theme = controller.Update(Features() with { BeatDetected = true }, true, ReactiveUiMode.Subtle, 0);
+        var output = renderer.Draw(120, 30, new AppRenderState(
+            playlist, new PlayerSettings(), playback, frame, browser, hiddenMenu, false, false, "Ready",
+            ReactiveTheme: theme)).Diff(null);
+        var expected = ReactiveThemeController.VersionColor(theme.VersionHue, theme.VersionGlow);
+        Assert.Contains($"\u001b[38;2;{expected.R};{expected.G};{expected.B}m", output);
+        Assert.Contains("v1.26.5.11", output);
+    }
+
+    [Fact]
     public void SpectrumKeepsStaticGradientWhenOffAndFollowsThemeWhenReactive()
     {
         var playlist = new Playlist();

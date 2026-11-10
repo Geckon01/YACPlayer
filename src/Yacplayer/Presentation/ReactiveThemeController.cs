@@ -16,7 +16,9 @@ public readonly record struct ReactiveTheme(
     CellColor AccentText,
     double Hue = ReactiveThemeController.BaseHue,
     double Saturation = 0.82,
-    double Pulse = 0);
+    double Pulse = 0,
+    double VersionGlow = 0,
+    double VersionHue = 0);
 
 /// <summary>
 /// Converts smoothed music features (bass energy, spectral centroid, overall energy)
@@ -31,8 +33,13 @@ internal sealed class ReactiveThemeController
     public const double MaximumHue = 165;
     private const long UpdateIntervalMs = 80;
 
+    private const double GoldenAngle = 137.508;
     private readonly double _timeScale;
     private long _lastUpdateMs = long.MinValue;
+    private long _lastCallMs = long.MinValue;
+    private bool _previousBeat;
+    private double _versionGlow;
+    private double _versionHue;
     private double _bass;
     private double _hue = BaseHue;
     private double _saturation = 0.82;
@@ -53,8 +60,31 @@ internal sealed class ReactiveThemeController
         {
             _current = default;
             _lastUpdateMs = long.MinValue;
+            _lastCallMs = long.MinValue;
+            _previousBeat = false;
+            _versionGlow = 0;
             return _current;
         }
+
+        var callDt = _lastCallMs == long.MinValue
+            ? 0
+            : Math.Min(0.25, (nowMs - _lastCallMs) / 1000d) * _timeScale;
+        _lastCallMs = nowMs;
+
+        // The predicted beat edge is tracked every call so the short flash is never
+        // dropped by the 80 ms color-update gate below.
+        var beat = reacting && features.Available && features.BeatDetected;
+        if (beat && !_previousBeat)
+        {
+            _versionGlow = 1;
+            _versionHue = (_versionHue + GoldenAngle) % 360;
+        }
+        else if (_versionGlow > 0)
+        {
+            _versionGlow = _versionGlow <= 0.02 ? 0 : _versionGlow * Math.Exp(-callDt / 0.22);
+        }
+
+        _previousBeat = beat;
 
         if (_lastUpdateMs == long.MinValue)
         {
@@ -65,7 +95,8 @@ internal sealed class ReactiveThemeController
         var elapsedMs = nowMs - _lastUpdateMs;
         if (elapsedMs < UpdateIntervalMs)
         {
-            return _current;
+            // Colors are gated, but the version-flash decay still advances each frame.
+            return _current with { VersionGlow = _versionGlow, VersionHue = _versionHue };
         }
 
         _lastUpdateMs = nowMs;
@@ -103,7 +134,8 @@ internal sealed class ReactiveThemeController
         var title = BackgroundFromHsl(_hue, saturation, 0.45 + pulse);
         var row = BackgroundFromHsl(_hue, saturation * 0.8, 0.32 + pulse * 1.2);
         var accent = FromHsl(_hue, saturation * 0.7, 0.65 + pulse * 0.3);
-        _current = new ReactiveTheme(true, border, title, row, accent, _hue, saturation, pulse);
+        _current = new ReactiveTheme(
+            true, border, title, row, accent, _hue, saturation, pulse, _versionGlow, _versionHue);
         return _current;
     }
 
@@ -132,6 +164,13 @@ internal sealed class ReactiveThemeController
 
         return delta;
     }
+
+    /// <summary>
+    /// Easter egg: the header version label flashes in a fresh color on every
+    /// predicted beat and fades back to white between beats.
+    /// </summary>
+    internal static CellColor VersionColor(double hue, double glow)
+        => FromHsl(hue, 0.95 * glow, Math.Clamp(0.60 + 0.40 * (1 - glow), 0, 1));
 
     internal static CellColor FromHsl(double hue, double saturation, double lightness)
     {
