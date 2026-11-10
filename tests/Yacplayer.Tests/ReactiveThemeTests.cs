@@ -53,12 +53,12 @@ public class ReactiveThemeTests
 
         var baseBorder = ReactiveThemeController.FromHsl(
             ReactiveThemeController.BaseHue,
-            0.82 * 0.75,
-            0.42);
+            0.82 * 0.85,
+            0.40);
         var baseTitle = ReactiveThemeController.BackgroundFromHsl(
             ReactiveThemeController.BaseHue,
             0.82,
-            0.45);
+            0.42);
         Assert.Equal(baseBorder, resting.Border);
         Assert.Equal(baseTitle, resting.TitleBackground);
     }
@@ -115,7 +115,7 @@ public class ReactiveThemeTests
             10 * 80L + 100_000);
         Assert.True(resting.Active);
         Assert.Equal(
-            ReactiveThemeController.BackgroundFromHsl(ReactiveThemeController.BaseHue, 0.82, 0.45),
+            ReactiveThemeController.BackgroundFromHsl(ReactiveThemeController.BaseHue, 0.82, 0.42),
             resting.TitleBackground);
     }
 
@@ -300,6 +300,52 @@ public class ReactiveThemeTests
         Assert.Contains($"\u001b[38;2;{expectedBottom.R};{expectedBottom.G};{expectedBottom.B}m", reactiveOutput);
         // The yellow static marker must not appear once the theme is active.
         Assert.DoesNotContain("\u001b[33m", reactiveOutput);
+    }
+
+    [Fact]
+    public void RendererThemesProgressBarAndWaveformWithTheActiveTheme()
+    {
+        var playlist = new Playlist();
+        var playback = new PlaybackSnapshot(
+            PlaybackState.Playing, "a.mp3", TimeSpan.FromSeconds(50), TimeSpan.FromSeconds(100), 48000, 2, 75, false);
+        var samples = new float[512];
+        for (var i = 0; i < samples.Length; i++)
+        {
+            samples[i] = 0.5f * (float)Math.Sin(i / 16d);
+        }
+
+        var frame = new VisualizationFrame(new float[64], samples, samples.Length, RealtimeAudioSnapshot.Empty);
+        var browser = new BrowserViewState("C:\\", [], 0, false);
+        var hiddenMenu = new SettingsViewState(false, 0, false, "", "");
+        var renderer = new AppRenderer();
+        var settings = new PlayerSettings { VisualizerMode = VisualizerMode.Waveform };
+
+        var controller = new ReactiveThemeController(timeScale: 1000);
+        for (var frameIndex = 0; frameIndex < 50; frameIndex++)
+        {
+            controller.Update(Features(bass: 0.9f, centroid: 2400f), true, ReactiveUiMode.Visualizer, frameIndex * 80L);
+        }
+
+        var theme = controller.Update(Features(bass: 0.9f, centroid: 2400f), true, ReactiveUiMode.Visualizer, 50 * 80L);
+        var output = renderer.Draw(120, 30, new AppRenderState(
+            playlist, settings, playback, frame, browser, hiddenMenu, false, false, "Ready",
+            ReactiveTheme: theme)).Diff(null);
+
+        var expectedProgress = ReactiveThemeController.FromHsl(
+            theme.Hue,
+            Math.Clamp(theme.Saturation, 0.55, 0.95),
+            Math.Clamp(0.50 + theme.Pulse * 1.2, 0.4, 0.85));
+        Assert.Contains($"\u001b[38;2;{expectedProgress.R};{expectedProgress.G};{expectedProgress.B}m", output);
+        var expectedWave = ReactiveThemeController.FromHsl(
+            theme.Hue,
+            Math.Clamp(theme.Saturation, 0.55, 0.95),
+            Math.Clamp(0.55 + theme.Pulse * 1.4, 0.45, 0.9));
+        Assert.Contains($"\u001b[38;2;{expectedWave.R};{expectedWave.G};{expectedWave.B}m", output);
+
+        // With the theme Off both return to the static green.
+        var staticOutput = renderer.Draw(120, 30, new AppRenderState(
+            playlist, settings, playback, frame, browser, hiddenMenu, false, false, "Ready")).Diff(null);
+        Assert.Contains("\u001b[32m", staticOutput);
     }
 
     [Fact]

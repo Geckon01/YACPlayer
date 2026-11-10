@@ -357,7 +357,7 @@ internal sealed class AppRenderer
         screen.Write(left + 3, top + 6, Fit($"Dominant : {FormatFrequency(audio.DominantFrequencyHz)}", width), CellColor.Green);
     }
 
-    private static void DrawProgress(ScreenBuffer screen, int x, int y, int width, PlaybackSnapshot playback)
+    private void DrawProgress(ScreenBuffer screen, int x, int y, int width, PlaybackSnapshot playback)
     {
         var duration = playback.Duration.TotalSeconds;
         var ratio = duration <= 0
@@ -366,10 +366,16 @@ internal sealed class AppRenderer
         var barWidth = Math.Max(1, width - 13);
         var filled = Math.Clamp((int)(ratio * barWidth), 0, barWidth);
         screen.Write(x, y, $"{playback.Position:mm\\:ss} ");
-        screen.Write(x + 6, y, new string('█', filled), CellColor.Green);
+        screen.Write(x + 6, y, new string('█', filled), _theme.Active ? ProgressColor(_theme) : CellColor.Green);
         screen.Write(x + 6 + filled, y, new string('·', barWidth - filled));
         screen.Write(x + width - 5, y, $"{playback.Duration:mm\\:ss}");
     }
+
+    private static CellColor ProgressColor(ReactiveTheme theme)
+        => ReactiveThemeController.FromHsl(
+            theme.Hue,
+            Math.Clamp(theme.Saturation, 0.55, 0.95),
+            Math.Clamp(0.50 + theme.Pulse * 1.2, 0.4, 0.85));
 
     private void DrawVisualizer(
         ScreenBuffer screen,
@@ -464,7 +470,7 @@ internal sealed class AppRenderer
         return CellColor.Rgb(230, (int)Math.Round(190 - 145 * upperPosition), 0);
     }
 
-    private static void DrawWaveform(
+    private void DrawWaveform(
         ScreenBuffer screen,
         int left,
         int top,
@@ -510,7 +516,17 @@ internal sealed class AppRenderer
             lower = Math.Clamp(lower, top, top + height - 1);
             for (var y = Math.Min(upper, lower); y <= Math.Max(upper, lower); y++)
             {
-                screen.Write(left + x, y, ".", CellColor.Green, bold: true);
+                screen.Write(
+                    left + x,
+                    y,
+                    ".",
+                    _theme.Active
+                        ? ReactiveThemeController.FromHsl(
+                            _theme.Hue,
+                            Math.Clamp(_theme.Saturation, 0.55, 0.95),
+                            Math.Clamp(0.55 + _theme.Pulse * 1.4, 0.45, 0.9))
+                        : CellColor.Green,
+                    bold: true);
             }
         }
     }

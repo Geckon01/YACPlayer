@@ -29,8 +29,8 @@ public readonly record struct ReactiveTheme(
 internal sealed class ReactiveThemeController
 {
     public const double BaseHue = 118;
-    public const double MinimumHue = 96;
-    public const double MaximumHue = 165;
+    public const double MinimumHue = 78;
+    public const double MaximumHue = 192;
     private const long UpdateIntervalMs = 80;
 
     private const double GoldenAngle = 137.508;
@@ -107,20 +107,20 @@ internal sealed class ReactiveThemeController
             ? Math.Clamp(features.BassEnergy, 0, 1)
             : 0;
         var alpha = bassTarget > _bass
-            ? 1 - Math.Exp(-dt / 0.07)
-            : 1 - Math.Exp(-dt / (visualizer ? 0.35 : 0.45));
+            ? 1 - Math.Exp(-dt / 0.05)
+            : 1 - Math.Exp(-dt / (visualizer ? 0.28 : 0.38));
         _bass += (bassTarget - _bass) * alpha;
 
         var hueTarget = reacting && features.Available && features.SpectralCentroidHz > 0
             ? MinimumHue + (MaximumHue - MinimumHue) * NormalizeCentroid(features.SpectralCentroidHz)
             : BaseHue;
-        _hue += (ShortestHueDelta(_hue, hueTarget)) * (1 - Math.Exp(-dt / (visualizer ? 2.0 : 3.0)));
+        _hue += (ShortestHueDelta(_hue, hueTarget)) * (1 - Math.Exp(-dt / (visualizer ? 1.6 : 2.2)));
 
         var saturationTarget = reacting && features.Available
-            ? (visualizer ? 0.55 : 0.66) + (visualizer ? 0.40 : 0.26) * NormalizeEnergy(features.RmsDbfs)
+            ? (visualizer ? 0.45 : 0.55) + (visualizer ? 0.50 : 0.35) * NormalizeEnergy(features.RmsDbfs)
             : 0.82;
-        saturationTarget = Math.Clamp(saturationTarget, 0.5, 0.95);
-        _saturation += (saturationTarget - _saturation) * (1 - Math.Exp(-dt / 2.5));
+        saturationTarget = Math.Clamp(saturationTarget, 0.45, 0.98);
+        _saturation += (saturationTarget - _saturation) * (1 - Math.Exp(-dt / 2.0));
 
         return Build(mode, reacting);
     }
@@ -128,12 +128,14 @@ internal sealed class ReactiveThemeController
     private ReactiveTheme Build(ReactiveUiMode mode, bool reacting)
     {
         var visualizer = mode == ReactiveUiMode.Visualizer;
-        var pulse = _bass * (visualizer ? 0.16 : 0.10);
-        var saturation = Math.Clamp(_saturation, 0.45, 0.95);
-        var border = FromHsl(_hue, saturation * 0.75, 0.42 + pulse * 0.6);
-        var title = BackgroundFromHsl(_hue, saturation, 0.45 + pulse);
-        var row = BackgroundFromHsl(_hue, saturation * 0.8, 0.32 + pulse * 1.2);
-        var accent = FromHsl(_hue, saturation * 0.7, 0.65 + pulse * 0.3);
+        // Pulse amplitudes stay bounded (18%/28% of the lightness axis) with
+        // exponential envelopes so the motion reads as a glow, never a strobe.
+        var pulse = _bass * (visualizer ? 0.28 : 0.18);
+        var saturation = Math.Clamp(_saturation, 0.40, 0.98);
+        var border = FromHsl(_hue, saturation * 0.85, Math.Clamp(0.40 + pulse * 1.1, 0.3, 0.82));
+        var title = BackgroundFromHsl(_hue, saturation, Math.Clamp(0.42 + pulse * 1.5, 0.3, 0.80));
+        var row = BackgroundFromHsl(_hue, saturation * 0.85, Math.Clamp(0.30 + pulse * 1.9, 0.22, 0.62));
+        var accent = FromHsl(_hue, saturation * 0.75, Math.Clamp(0.62 + pulse * 0.8, 0.5, 0.92));
         _current = new ReactiveTheme(
             true, border, title, row, accent, _hue, saturation, pulse, _versionGlow, _versionHue);
         return _current;
