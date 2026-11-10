@@ -112,13 +112,13 @@ internal sealed class AppRenderer
         }
 
         DrawBox(screen, left, top, right, bottom, " Exit ", CellColor.Green);
-        var prompt = "Выйти из приложения?";
+        var prompt = "Sure exit?";
         screen.Write(left + Math.Max(2, (dialogWidth - prompt.Length) / 2), top + 2, prompt, CellColor.White, bold: true);
 
         var yesX = left + dialogWidth / 2 - 10;
         var noX = left + dialogWidth / 2 + 3;
-        DrawDialogChoice(screen, yesX, top + 4, " Да ", state.ExitConfirmationYesSelected);
-        DrawDialogChoice(screen, noX, top + 4, " Нет ", !state.ExitConfirmationYesSelected);
+        DrawDialogChoice(screen, yesX, top + 4, " Yep ", state.ExitConfirmationYesSelected);
+        DrawDialogChoice(screen, noX, top + 4, " Nope ", !state.ExitConfirmationYesSelected);
     }
 
     private static void DrawDialogChoice(ScreenBuffer screen, int x, int y, string label, bool selected)
