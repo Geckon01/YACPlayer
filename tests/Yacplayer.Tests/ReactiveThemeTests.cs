@@ -206,6 +206,44 @@ public class ReactiveThemeTests
     }
 
     [Fact]
+    public void SpectrumKeepsStaticGradientWhenOffAndFollowsThemeWhenReactive()
+    {
+        var playlist = new Playlist();
+        var playback = new PlaybackSnapshot(PlaybackState.Playing, "a.mp3", default, default, 48000, 2, 75, false);
+        var bands = Enumerable.Repeat(1f, 64).ToArray();
+        var frame = new VisualizationFrame(bands, new float[4096], 0, RealtimeAudioSnapshot.Empty);
+        var browser = new BrowserViewState("C:\\", [], 0, false);
+        var hiddenMenu = new SettingsViewState(false, 0, false, "", "");
+        var renderer = new AppRenderer();
+
+        var staticOutput = renderer.Draw(100, 24, new AppRenderState(
+            playlist, new PlayerSettings(), playback, frame, browser, hiddenMenu, false, false, "Ready")).Diff(null);
+        // Classic ramp: bottom green with the yellow marker.
+        Assert.Contains("\u001b[38;2;0;190;0m", staticOutput);
+        Assert.Contains("\u001b[33m", staticOutput);
+
+        var controller = new ReactiveThemeController(timeScale: 1000);
+        for (var f = 0; f < 200; f++)
+        {
+            controller.Update(Features(bass: 0.9f, centroid: 5800f), true, ReactiveUiMode.Subtle, f * 80L);
+        }
+
+        var theme = controller.Update(Features(bass: 0.9f, centroid: 5800f), true, ReactiveUiMode.Subtle, 200 * 80L);
+        var reactiveOutput = renderer.Draw(100, 24, new AppRenderState(
+            playlist, new PlayerSettings(), playback, frame, browser, hiddenMenu, false, false, "Ready",
+            ReactiveTheme: theme)).Diff(null);
+
+        // Bottom of the bars: hue from the theme, saturation clamped, lightness 0.34 + pulse/2.
+        var expectedBottom = ReactiveThemeController.FromHsl(
+            theme.Hue,
+            Math.Clamp(theme.Saturation, 0.55, 0.95),
+            Math.Clamp(0.34 + theme.Pulse * 0.5, 0.2, 0.85));
+        Assert.Contains($"\u001b[38;2;{expectedBottom.R};{expectedBottom.G};{expectedBottom.B}m", reactiveOutput);
+        // The yellow static marker must not appear once the theme is active.
+        Assert.DoesNotContain("\u001b[33m", reactiveOutput);
+    }
+
+    [Fact]
     public void BassEnergyIsHighForLowToneAndLowForHighTone()
     {
         var bassRing = new SampleRingBuffer(65536);

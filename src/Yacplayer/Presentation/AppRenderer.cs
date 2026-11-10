@@ -366,7 +366,7 @@ internal sealed class AppRenderer
         screen.Write(x + width - 5, y, $"{playback.Duration:mm\\:ss}");
     }
 
-    private static void DrawVisualizer(
+    private void DrawVisualizer(
         ScreenBuffer screen,
         int left,
         int top,
@@ -391,7 +391,7 @@ internal sealed class AppRenderer
         }
     }
 
-    private static void DrawSpectrum(
+    private void DrawSpectrum(
         ScreenBuffer screen,
         int left,
         int top,
@@ -404,6 +404,7 @@ internal sealed class AppRenderer
             return;
         }
 
+        var theme = _theme;
         var bottom = top + height - 1;
         for (var x = 0; x < width; x++)
         {
@@ -415,14 +416,34 @@ internal sealed class AppRenderer
             for (var level = 0; level < barHeight; level++)
             {
                 var ratio = level / (double)Math.Max(1, height - 1);
-                screen.Write(left + x, bottom - level, "█", SpectrumGradient(ratio));
+                screen.Write(left + x, bottom - level, "█", theme.Active
+                    ? ReactiveGradient(theme, ratio)
+                    : SpectrumGradient(ratio));
             }
 
             if (barHeight > 0)
             {
-                screen.Write(left + x, Math.Max(top, bottom - barHeight), "-", CellColor.Yellow, bold: true);
+                screen.Write(
+                    left + x,
+                    Math.Max(top, bottom - barHeight),
+                    "-",
+                    theme.Active
+                        ? ReactiveThemeController.FromHsl(theme.Hue, Math.Clamp(theme.Saturation, 0.5, 0.95) * 0.85, 0.78 + theme.Pulse * 0.15)
+                        : CellColor.Yellow,
+                    bold: true);
             }
         }
+    }
+
+    private static CellColor ReactiveGradient(ReactiveTheme theme, double ratio)
+    {
+        // Same green-to-warm ramp shape as the static gradient, rotated to the
+        // smoothed reactive hue and gently brightened by the bass pulse.
+        ratio = Math.Clamp(ratio, 0, 1);
+        var saturation = Math.Clamp(theme.Saturation, 0.55, 0.95);
+        var hue = theme.Hue + 38 * ratio;
+        var lightness = 0.34 + 0.30 * ratio + theme.Pulse * 0.5;
+        return ReactiveThemeController.FromHsl(hue, saturation, Math.Clamp(lightness, 0.2, 0.85));
     }
 
     private static CellColor SpectrumGradient(double ratio)

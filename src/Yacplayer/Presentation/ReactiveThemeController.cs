@@ -13,7 +13,10 @@ public readonly record struct ReactiveTheme(
     CellColor Border,
     CellBackground TitleBackground,
     CellBackground RowBackground,
-    CellColor AccentText);
+    CellColor AccentText,
+    double Hue = ReactiveThemeController.BaseHue,
+    double Saturation = 0.82,
+    double Pulse = 0);
 
 /// <summary>
 /// Converts smoothed music features (bass energy, spectral centroid, overall energy)
@@ -100,7 +103,7 @@ internal sealed class ReactiveThemeController
         var title = BackgroundFromHsl(_hue, saturation, 0.45 + pulse);
         var row = BackgroundFromHsl(_hue, saturation * 0.8, 0.32 + pulse * 1.2);
         var accent = FromHsl(_hue, saturation * 0.7, 0.65 + pulse * 0.3);
-        _current = new ReactiveTheme(true, border, title, row, accent);
+        _current = new ReactiveTheme(true, border, title, row, accent, _hue, saturation, pulse);
         return _current;
     }
 
