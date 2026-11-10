@@ -140,7 +140,7 @@ sequenceDiagram
 ### 5.3 Shutdown ownership
 
 - `App.RunAsync` владеет `AudioEngine` и `TerminalSession` через `using`.
-- `Q` сначала открывает модальный диалог `Да` / `Нет`, где по умолчанию выбрано `Нет`; подтверждённый выход проходит через единый cleanup path.
+- `Q` сначала открывает модальный диалог `Yep` / `Nope`, где по умолчанию выбрано `Nope`; подтверждённый выход проходит через единый cleanup path.
 - Ctrl+C отменяет delay/event loop; cleanup выполняется обычным control flow.
 - Перед сохранением вызывается `audio.Stop()`.
 - Ошибка сохранения `IOException` не мешает выходу.

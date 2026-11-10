@@ -31,7 +31,7 @@ Do not remove or weaken this contract. Its purpose is to let a new agent underst
 - Metadata: ATL 7.19.0, loaded lazily for the current track only.
 - Persistence: per-user JSON at `%LOCALAPPDATA%\Yacplayer\settings.json`.
 - Distribution: framework-dependent win-x64 publish, optional win-x64 Native AOT publish, an Inno Setup 6 installer, and a self-contained x64 MSIX build for Microsoft Store.
-- Automated tests: 40 xUnit tests that avoid real audio hardware.
+- Automated tests: 44 xUnit tests that avoid real audio hardware.
 - License: MIT. The repository and user-facing documentation carry an AI-assisted/generated-code notice.
 - Public documentation is English-first with Russian counterparts.
 
@@ -82,7 +82,7 @@ Do not remove or weaken this contract. Its purpose is to let a new agent underst
 - The waveform draws a normalized min/max envelope with green `.` characters. The dot glyph is the current intentional design.
 - `B` toggles the persisted Realtime Audio panel in sufficiently wide layouts. When off, the secondary tap stops writing and the level/spectral/tempo analyzer is not invoked.
 - `O` opens a full-screen settings menu containing every persisted JSON option. Successful changes apply and save immediately; folder paths are edited inline and must resolve to existing directories.
-- `Q` opens a modal Russian `Да` / `Нет` exit confirmation over every application view, except while a settings path is being edited. `Нет` is selected by default; arrows/Tab change the choice, Enter accepts it, Esc/N cancels, and Y confirms exit. Ctrl+C remains an immediate cancellation path.
+- `Q` opens a modal `Yep` / `Nope` exit confirmation over every application view, except while a settings path is being edited. `Nope` is selected by default; arrows/Tab change the choice, Enter accepts it, Esc/N cancels, and Y confirms exit. Ctrl+C remains an immediate cancellation path.
 - The Realtime Audio `Beat` row renders the predictive pulse as an ASCII cat: `=^o.o^=` on the beat and `=^-.-^=` between beats.
 
 ### Metadata and settings
@@ -222,7 +222,7 @@ dotnet build Yacplayer.sln -c Release
 dotnet test Yacplayer.sln -c Release
 ```
 
-Add focused tests for changed device-independent behavior. The current suite covers CLI rejection, playlist repeat/removal/shuffle including the single-track Repeat All boundary, ring wrapping/latest/exact reads, gated pre-volume PCM tapping, ANSI diff/color/batching, settings interaction/round trip and malformed JSON, startup-directory persistence, synthetic spectrum/tempo analysis including partial-window accumulation across FPS changes, FFT reconfiguration, extracted player/browser/settings layouts, browser-controller deduplication, metadata fallback, and browser sorting/filtering.
+Add focused tests for changed device-independent behavior. The current suite covers CLI rejection, playlist repeat/removal/shuffle including the single-track Repeat All boundary, ring wrapping/latest/exact reads including concurrent producer/consumer overflow, reset, and stale-cursor stress, gated pre-volume PCM tapping, ANSI diff/color/batching, settings interaction/round trip and malformed JSON, startup-directory persistence, synthetic spectrum/tempo analysis including partial-window accumulation across FPS changes, FFT reconfiguration, extracted player/browser/settings layouts, browser-controller deduplication, metadata fallback, and browser sorting/filtering.
 
 Automated tests do not verify real WASAPI behavior. Audio, terminal, or packaging work should also record an appropriate manual smoke check when the environment permits:
 
@@ -241,11 +241,10 @@ The detailed backlog is [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md). Keep this 
 
 ### P1: correctness and performance
 
-1. Replace the ring protocol with a proven SPSC design. Producer overflow and consumer reads currently both write `_read`.
-2. Reuse screen buffers and ANSI output storage instead of allocating a cell array and diff string every frame.
-3. Batch multichannel downmix/ring writes; the callback currently invokes `ring.Write` per mono sample.
-4. Make recursive scanning incremental, cancellable, and batched; startup and `A` scans still materialize their full result.
-5. Establish CPU, allocation, memory-growth, callback-duration, terminal-throughput, and soak baselines.
+1. Reuse screen buffers and ANSI output storage instead of allocating a cell array and diff string every frame.
+2. Batch multichannel downmix/ring writes; the callback currently invokes `ring.Write` per mono sample.
+3. Make recursive scanning incremental, cancellable, and batched; startup and `A` scans still materialize their full result.
+4. Establish CPU, allocation, memory-growth, callback-duration, terminal-throughput, and soak baselines.
 
 ### P2/P3: behavior and maintainability
 
@@ -303,6 +302,8 @@ Local-only caution at the time of this update: `yacplayer-history-backup-2026110
 ## Current verification record
 
 Update this section after every material change.
+
+- Sample ring SPSC protocol fixed on 2026-11-11: `SampleRingBuffer` now has single-owner cursors — the producer writes only `_write` and never touches `_read`, while the consumer exclusively owns `_read` and catches itself up to `write - capacity` before each copy, preserving drop-oldest semantics. Capacity is rounded up to a power of two and indexed with a bitmask, removing the per-sample modulo from the audio callback. This closes the documented P1 cursor race where producer overflow and consumer reads both wrote `_read` and a check-then-act interleaving could rewind the consumer. Added `RingBufferConcurrencyTests`: producer/consumer overflow regression, `ReadLatest`/`Reset` interleaving stress, and a stale-cursor clamp test. The exit-confirmation renderer test was realigned to the English `Sure exit?` / `Yep` / `Nope` labels introduced by commit `2ce6a6e`, and AGENTS/README/ARCHITECTURE (EN/RU) now document those English labels. `dotnet build Yacplayer.sln -c Release --no-restore` succeeded with 0 warnings/0 errors and `dotnet test Yacplayer.sln -c Release --no-build` passed 44/44 tests. Real WASAPI/TUI visualization behavior remains manually unverified; no binary artifacts were rebuilt and the change remains uncommitted.
 
 Commit status update: the FFT/runtime support is committed as `0d433ae`; the settings menu and exit confirmation are committed as `31a86f3`. These commits supersede the earlier “remains uncommitted” wording retained in the dated verification entries below.
 

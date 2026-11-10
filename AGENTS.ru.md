@@ -31,7 +31,7 @@
 - ATL 7.19.0 лениво загружает метаданные только текущего трека.
 - Настройки: `%LOCALAPPDATA%\Yacplayer\settings.json`.
 - Есть framework-dependent win-x64 publish, win-x64 Native AOT, Inno Setup 6 и self-contained x64 MSIX для Microsoft Store.
-- 40 xUnit-тестов без реального аудиоустройства.
+- 44 xUnit-тестов без реального аудиоустройства.
 - MIT; в документации есть уведомление об AI-assisted/generated code.
 - Публичные документы ведутся сначала на английском и имеют русские версии.
 
@@ -82,7 +82,7 @@
 - Waveform рисуется зелёными `.` по min/max envelope. Точка — актуальное намеренное решение дизайна.
 - `B` переключает сохраняемую панель Realtime Audio в достаточно широком layout. В выключенном состоянии вторичный tap не пишет данные, а анализатор уровней, спектра и темпа не вызывается.
 - `O` открывает полноэкранное меню всех сохраняемых JSON-параметров. Корректные изменения сразу применяются и сохраняются; пути редактируются inline и должны указывать на существующие каталоги.
-- `Q` открывает модальный диалог подтверждения выхода `Да` / `Нет` поверх любого экрана приложения, кроме редактирования пути настройки. По умолчанию выбрано безопасное `Нет`; стрелки/Tab меняют выбор, Enter принимает его, Esc/N отменяет, Y подтверждает выход. Ctrl+C остаётся немедленным cancellation path.
+- `Q` открывает модальный диалог подтверждения выхода `Yep` / `Nope` поверх любого экрана приложения, кроме редактирования пути настройки. По умолчанию выбрано безопасное `Nope`; стрелки/Tab меняют выбор, Enter принимает его, Esc/N отменяет, Y подтверждает выход. Ctrl+C остаётся немедленным cancellation path.
 - Строка `Beat` панели Realtime Audio показывает предиктивный импульс ASCII-котиком: `=^o.o^=` на доле и `=^-.-^=` между долями.
 
 ### Метаданные и настройки
@@ -216,11 +216,10 @@ Installer собирается после обновления `artifacts/publis
 
 ### P1
 
-1. Заменить ring на доказанный SPSC: producer и consumer сейчас оба пишут `_read`.
-2. Переиспользовать screen buffers и ANSI storage вместо allocation на каждом frame.
-3. Пакетно downmix/write multichannel samples вместо `ring.Write` на каждый sample.
-4. Сделать recursive scan incremental/cancellable/batched; startup и `A` пока материализуют весь результат.
-5. Зафиксировать CPU/allocation/memory/callback/terminal/soak baselines.
+1. Переиспользовать screen buffers и ANSI storage вместо allocation на каждом frame.
+2. Пакетно downmix/write multichannel samples вместо `ring.Write` на каждый sample.
+3. Сделать recursive scan incremental/cancellable/batched; startup и `A` пока материализуют весь результат.
+4. Зафиксировать CPU/allocation/memory/callback/terminal/soak baselines.
 
 ### P2/P3
 
@@ -269,6 +268,8 @@ Installer собирается после обновления `artifacts/publis
 Локальное предупреждение: `yacplayer-history-backup-20261103.bundle` содержит старую историю и копирайтные blobs. Это только recovery artifact; его нельзя stage/publish/release. В дереве могут быть и другие пользовательские untracked publish outputs/profiles — сохранять без явной команды пользователя.
 
 ## Текущая проверка
+
+- Гонка курсора кольцевого буфера исправлена 2026-11-11: в `SampleRingBuffer` восстановлены одиночные владельцы курсоров — producer пишет только `_write` и никогда не трогает `_read`, а consumer эксклюзивно владеет `_read` и перед каждым копированием сам подтягивает позицию до `write - capacity`, сохраняя семантику drop-oldest. Ёмкость округляется до степени двойки и индексируется маской, поштучный modulo устранён из audio callback. Это закрывает задокументированную P1-гонку, когда overflow producer и чтения consumer оба писали `_read`, а чередование check-then-act могло откатить consumer. Добавлены `RingBufferConcurrencyTests`: регрессия overflow producer/consumer, стресс-чередование `ReadLatest`/`Reset` и тест clamp устаревшей позиции. Renderer-тест подтверждения выхода приведён к английским подписям `Sure exit?` / `Yep` / `Nope`, введённым коммитом `2ce6a6e`; AGENTS/README/ARCHITECTURE (EN/RU) документируют английские подписи. `dotnet build Yacplayer.sln -c Release --no-restore` завершился с 0 warnings/0 errors, `dotnet test Yacplayer.sln -c Release --no-build` прошёл 44/44 тестов. Поведение реальных WASAPI/TUI-визуализаций остаётся вручную не проверено; бинарные артефакты не пересобирались, изменение не закоммичено.
 
 Обновление статуса коммитов: поддержка FFT/runtime закоммичена как `0d433ae`, меню настроек и подтверждение выхода — как `31a86f3`. Эти коммиты заменяют более ранние формулировки «не закоммичено» в датированных записях ниже.
 

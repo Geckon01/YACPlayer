@@ -156,9 +156,9 @@ public class ApplicationComponentTests
                 false));
         var output = screen.Diff(null);
 
-        Assert.Contains("Выйти из приложения?", output);
-        Assert.Contains("[ Да ]", output);
-        Assert.Contains("[ Нет ]", output);
+        Assert.Contains("Sure exit?", output);
+        Assert.Contains("[ Yep ]", output);
+        Assert.Contains("[ Nope ]", output);
         Assert.Contains("Settings [O]", output);
     }
 

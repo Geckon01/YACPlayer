@@ -136,7 +136,7 @@ sequenceDiagram
     A->>T: restore terminal
 ```
 
-`App.RunAsync` owns `AudioEngine` and `TerminalSession` through deterministic `using` scopes. `Q` first opens a modal `Да` / `Нет` confirmation with `Нет` selected by default; a confirmed exit and cancellation pass through the same cleanup path. Saving errors do not prevent exit.
+`App.RunAsync` owns `AudioEngine` and `TerminalSession` through deterministic `using` scopes. `Q` first opens a modal `Yep` / `Nope` confirmation with `Nope` selected by default; a confirmed exit and cancellation pass through the same cleanup path. Saving errors do not prevent exit.
 
 ## 6. Application event loop
 

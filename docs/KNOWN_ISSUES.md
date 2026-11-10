@@ -11,7 +11,6 @@ Priority meanings: **P0** blocks a supported release or risks incorrect behavior
 | Priority | Area | Current problem | Main consequence |
 |---|---|---|---|
 | Roadmap | Portability | The application targets `net10.0-windows` and uses WASAPI | Published Linux/macOS binaries are not usable players |
-| P1 | Concurrency | The sample ring has unclear ownership of its read cursor | Lost, duplicated, or inconsistent visualization samples are possible |
 | P2 | Spectrum | The last valid spectrum has no elapsed-time decay | Bars can remain stale while playback is paused or samples stop arriving |
 | P1 | Rendering | A new cell array and ANSI output are allocated every frame | Avoidable GC and CPU load, especially at 60 FPS |
 | P1 | Library loading | Startup and `A` recursive scans still materialize the full result | Slow startup or a temporarily unresponsive UI on very large trees |
@@ -21,11 +20,11 @@ Priority meanings: **P0** blocks a supported release or risks incorrect behavior
 
 ## Correctness and concurrency
 
-### P1 — sample ring cursor race
+### P1 — sample ring cursor race (fixed 2026-11-11)
 
-`SampleRingBuffer.Write` may advance `_read` when overwriting old data, while `Read` also advances `_read`. The producer and consumer therefore both write the same cursor. Atomic reads/writes prevent torn values but do not provide a complete single-producer/single-consumer protocol; an interleaving can move the cursor using stale state.
+`SampleRingBuffer.Write` previously advanced `_read` when overwriting old data, while `Read` also advanced `_read`. The producer and consumer both wrote the same cursor; an interleaving could move it using stale state and rewind the consumer, causing torn or duplicated reads.
 
-Recommended action: replace it with a proven SPSC design whose producer owns only the write sequence and whose consumer owns only the read sequence. The consumer can clamp its local read position against `write - capacity`. Add sustained concurrent tests with sequence validation, wraparound, overwrite, reset, and shutdown.
+Resolution: the ring now follows a strict SPSC protocol. The producer owns only `_write` and never touches the read cursor; the consumer owns `_read` and catches itself up to `write - capacity` before each copy (drop-oldest semantics preserved). Capacity is rounded up to a power of two and indexed with a bitmask, removing per-sample modulo. Concurrent producer/consumer regression tests cover overflow rewind, `ReadLatest`/`Reset` interleavings, and the stale-cursor clamp. Residual theoretical torn-read window requires the producer to lap the consumer by a full ring between position reads; with 32768/65536-sample rings and 30–60 FPS consumption this is not reachable in practice.
 
 ### P1 — lifecycle and device integration coverage
 
@@ -137,7 +136,7 @@ A platform should not be marked supported until it can open all documented codec
 
 ## Recommended order of work
 
-1. Fix the ring protocol.
+1. ~~Fix the ring protocol.~~ Completed 2026-11-11.
 2. Correct FFT accumulation/decay and batch callback writes.
 3. Add integration, concurrency, allocation, and soak baselines.
 4. Reuse rendering buffers and make scanning incremental/cancellable.
@@ -170,11 +169,11 @@ A platform should not be marked supported until it can open all documented codec
 
 ## Корректность и конкурентность
 
-### P1 — гонка курсора кольцевого буфера
+### P1 — гонка курсора кольцевого буфера (исправлено 2026-11-11)
 
-`SampleRingBuffer.Write` сдвигает `_read` при вытеснении старых данных, а `Read` сдвигает тот же `_read` после чтения. Атомарность не делает такой протокол корректным: запись устаревшего значения при определённом чередовании потоков возможна.
+Ранее `SampleRingBuffer.Write` сдвигал `_read` при вытеснении старых данных, а `Read` сдвигал тот же `_read` после чтения. Атомарность не делала такой протокол корректным: при определённом чередовании потоков запись устаревшего значения откатывала consumer назад, вызывая рваные или дублированные чтения.
 
-Решение: проверенная SPSC-схема, где producer владеет только номером записи, consumer — номером чтения, а отставший consumer локально ограничивает позицию значением `write - capacity`. Нужны длительные конкурентные тесты последовательности, переполнения, wraparound, reset и shutdown.
+Решение: кольцо переведено на строгий SPSC-протокол. Producer владеет только `_write` и не трогает курсор чтения; consumer владеет `_read` и перед каждым копированием сам подтягивает позицию до `write - capacity` (семантика drop-oldest сохранена). Ёмкость округляется до степени двойки и индексируется маской, поштучный modulo устранён. Добавлены конкурентные регрессионные тесты producer/consumer: откат при переполнении, чередования `ReadLatest`/`Reset` и кламп устаревшей позиции. Теоретическое окно рваного чтения требует, чтобы producer обогнал consumer на полное кольцо между чтениями позиции; при кольцах 32768/65536 сэмплов и потреблении 30–60 кадров/с это недостижимо на практике.
 
 ### P1 — нет интеграционного покрытия жизненного цикла
 
@@ -280,7 +279,7 @@ Yacplayer               composition/CLI
 
 ## Рекомендуемый порядок работ
 
-1. Исправить ring protocol.
+1. ~~Исправить ring protocol.~~ Выполнено 2026-11-11.
 2. Исправить FFT accumulation/decay и блочную запись из callback.
 3. Добавить integration, concurrency, allocation и soak baseline.
 4. Переиспользовать render buffers; сделать scan incremental и cancellable.

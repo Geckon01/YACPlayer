@@ -112,7 +112,7 @@ When stdin or stdout is redirected, the interactive TUI is not started. The proc
 | `F` | Open the file browser |
 | `O` | Open the full-screen settings menu |
 | `?` | Open the in-application help |
-| `Q` | Open the `Да` / `Нет` exit-confirmation dialog |
+| `Q` | Open the `Yep` / `Nope` exit-confirmation dialog |
 
 ## File browser controls
 
@@ -127,7 +127,7 @@ The left panel contains directories and supported audio files; the right panel s
 | `A` | Append the selected file or directory contents without starting playback |
 | `O` | Open the full-screen settings menu |
 | `F` / `Esc` | Close the browser |
-| `Q` | Open the `Да` / `Нет` exit-confirmation dialog |
+| `Q` | Open the `Yep` / `Nope` exit-confirmation dialog |
 
 Moving above a drive root opens the virtual `This PC` list containing all ready drives. Inaccessible directories do not terminate the application and currently appear empty.
 
@@ -247,7 +247,7 @@ Complete engineering documentation: [English](docs/ARCHITECTURE.md) · [Русс
 - **Why does a visible file not play?** Appearing in the browser does not guarantee an installed system codec.
 - **Why does Explorer show an old icon?** Windows may cache executable icons; rename the file or restart Explorer.
 - **Why do settings not load?** Inspect `settings.json.bad` next to the configuration file.
-- **Why does the terminal remain in the alternate screen?** Confirming `Да` after `Q`, or using Ctrl+C, restores it; after a hard process termination, reset the terminal or open a new tab.
+- **Why does the terminal remain in the alternate screen?** Confirming `Yep` after `Q`, or using Ctrl+C, restores it; after a hard process termination, reset the terminal or open a new tab.
 
 Use `dotnet-counters` and `dotnet-trace` for profiling. Neither is a runtime dependency.
 
