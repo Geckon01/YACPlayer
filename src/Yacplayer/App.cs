@@ -34,6 +34,7 @@ public sealed class App(Arguments arguments)
 
         using var browser = new BrowserController(_playlist, _settings, browserPath);
         using var metadata = new CurrentTrackMetadataLoader();
+        using var trackEnergy = new TrackEnergyMapLoader();
         var visualization = new VisualizationPipeline(_settings);
         var settingsMenu = new SettingsController(_settings);
         var audioEvents = new AudioEventQueue();
@@ -82,13 +83,17 @@ public sealed class App(Arguments arguments)
 
             metadata.EnsureCurrent(_playlist, ct);
             _message = metadata.ApplyCompletions() ?? _message;
+            trackEnergy.EnsureCurrent(_playlist, _settings.ReactiveUiMode != ReactiveUiMode.Off, ct);
+            trackEnergy.ApplyCompletions();
             var playback = audio.Snapshot;
             var visualizationFrame = visualization.Update(playback, _settings, audio.AnalysisGeneration);
             var theme = reactiveTheme.Update(
                 visualizationFrame.RealtimeAudio,
                 playback.State == PlaybackState.Playing,
                 _settings.ReactiveUiMode,
-                Environment.TickCount64);
+                Environment.TickCount64,
+                trackEnergy.CurrentMap,
+                playback.Position.TotalSeconds);
             var state = new AppRenderState(
                 _playlist,
                 _settings,

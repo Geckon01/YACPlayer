@@ -34,6 +34,13 @@ internal sealed class ReactiveThemeController
     private const long UpdateIntervalMs = 80;
 
     private const double GoldenAngle = 137.508;
+
+    // Arrangement-driven amplitude scaling: quiet sections respond at 40% of
+    // the base amplitude, climaxes at 160%, smoothed over seconds so section
+    // boundaries glide rather than switch.
+    private const double QuietScale = 0.4;
+    private const double LoudScale = 1.6;
+
     private readonly double _timeScale;
     private long _lastUpdateMs = long.MinValue;
     private long _lastCallMs = long.MinValue;
@@ -43,6 +50,8 @@ internal sealed class ReactiveThemeController
     private double _bass;
     private double _hue = BaseHue;
     private double _saturation = 0.82;
+    private double _drama = 1;
+    private bool _arrangementActive;
     private ReactiveTheme _current;
 
     public ReactiveThemeController(double timeScale = 1.0)
@@ -55,6 +64,22 @@ internal sealed class ReactiveThemeController
         bool reacting,
         ReactiveUiMode mode,
         long nowMs)
+        => Update(features, reacting, mode, nowMs, null, 0);
+
+    /// <summary>
+    /// When an <paramref name="arrangement"/> map is available for the current
+    /// track, a smoothed drama factor derived from it (loudness lift against
+    /// the preceding section plus the approach of a louder upcoming section)
+    /// scales the pulse amplitude, saturation, and hue speed: quiet sections
+    /// stay calm, choruses push the interface to full amplitude.
+    /// </summary>
+    public ReactiveTheme Update(
+        RealtimeAudioSnapshot features,
+        bool reacting,
+        ReactiveUiMode mode,
+        long nowMs,
+        TrackEnergyMap? arrangement,
+        double positionSeconds)
     {
         if (mode == ReactiveUiMode.Off)
         {
@@ -63,6 +88,8 @@ internal sealed class ReactiveThemeController
             _lastCallMs = long.MinValue;
             _previousBeat = false;
             _versionGlow = 0;
+            _arrangementActive = false;
+            _drama = 1;
             return _current;
         }
 
@@ -111,14 +138,32 @@ internal sealed class ReactiveThemeController
             : 1 - Math.Exp(-dt / (visualizer ? 0.28 : 0.38));
         _bass += (bassTarget - _bass) * alpha;
 
+        _arrangementActive = reacting && arrangement is not null;
+        if (_arrangementActive)
+        {
+            var (_, lift, approach, intensity) = arrangement!.Sample(Math.Max(0, positionSeconds));
+            var eventLevel = Math.Clamp(Math.Max(lift, approach) / 5d, 0, 1);
+            var dramaTarget = Math.Clamp(0.45 * intensity + 0.55 * eventLevel, 0, 1);
+            var dramaAlpha = dramaTarget > _drama
+                ? 1 - Math.Exp(-dt / 1.5)
+                : 1 - Math.Exp(-dt / 4.0);
+            _drama += (dramaTarget - _drama) * dramaAlpha;
+        }
+
+        var hueSpeed = _arrangementActive ? 0.55 + 0.75 * _drama : 1;
         var hueTarget = reacting && features.Available && features.SpectralCentroidHz > 0
             ? MinimumHue + (MaximumHue - MinimumHue) * NormalizeCentroid(features.SpectralCentroidHz)
             : BaseHue;
-        _hue += (ShortestHueDelta(_hue, hueTarget)) * (1 - Math.Exp(-dt / (visualizer ? 1.6 : 2.2)));
+        _hue += (ShortestHueDelta(_hue, hueTarget)) * (1 - Math.Exp(-dt / ((visualizer ? 1.6 : 2.2) / hueSpeed)));
 
         var saturationTarget = reacting && features.Available
             ? (visualizer ? 0.45 : 0.55) + (visualizer ? 0.50 : 0.35) * NormalizeEnergy(features.RmsDbfs)
             : 0.82;
+        if (_arrangementActive)
+        {
+            saturationTarget *= 0.6 + 0.85 * _drama;
+        }
+
         saturationTarget = Math.Clamp(saturationTarget, 0.45, 0.98);
         _saturation += (saturationTarget - _saturation) * (1 - Math.Exp(-dt / 2.0));
 
@@ -130,7 +175,10 @@ internal sealed class ReactiveThemeController
         var visualizer = mode == ReactiveUiMode.Visualizer;
         // Pulse amplitudes stay bounded (18%/28% of the lightness axis) with
         // exponential envelopes so the motion reads as a glow, never a strobe.
-        var pulse = _bass * (visualizer ? 0.28 : 0.18);
+        // The arrangement drama factor (1.0 when no map is available) scales the
+        // base amplitude so quiet sections stay calm and choruses push to full.
+        var amplitude = _arrangementActive ? QuietScale + (LoudScale - QuietScale) * _drama : 1;
+        var pulse = _bass * (visualizer ? 0.28 : 0.18) * amplitude;
         var saturation = Math.Clamp(_saturation, 0.40, 0.98);
         var border = FromHsl(_hue, saturation * 0.85, Math.Clamp(0.40 + pulse * 1.1, 0.3, 0.82));
         var title = BackgroundFromHsl(_hue, saturation, Math.Clamp(0.42 + pulse * 1.5, 0.3, 0.80));

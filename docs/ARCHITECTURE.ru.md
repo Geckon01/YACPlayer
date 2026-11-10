@@ -67,6 +67,7 @@ Test-only dependencies: xUnit, Microsoft.NET.Test.Sdk, coverlet collector, xUnit
 | `App.cs` | Composition root, event loop, command routing и shutdown/settings orchestration |
 | `Application/BrowserController.cs` | Browser navigation/load lifecycle, path deduplication и batch queue insertion |
 | `Application/CurrentTrackMetadataLoader.cs` | Cancellation/completion ownership metadata текущего трека |
+| `Application/TrackEnergyMapLoader.cs` | Lifecycle офлайн-скана energy map текущего трека (cancellation, completion queue) |
 | `Application/VisualizationPipeline.cs` | Координация spectrum/waveform/realtime analysis и reset rules |
 | `Application/SettingsController.cs` | Навигация полноэкранных настроек, изменение значений и проверка путей |
 | `Presentation/AppRenderer.cs` | Player/browser/settings layouts, viewports и композиция `ScreenBuffer` |
@@ -81,8 +82,10 @@ Test-only dependencies: xUnit, Microsoft.NET.Test.Sdk, coverlet collector, xUnit
 | `Audio/PcmTapSampleProvider.cs` | PCM forwarding, mono visualization tap и gated analysis tap |
 | `Audio/SampleRingBuffer.cs` | Bounded sample transport между audio и DSP |
 | `Audio/PlaybackSnapshot.cs` | Immutable UI-facing playback snapshot |
+| `Audio/TrackEnergyScanner.cs` | Офлайн background decode, строящий `TrackEnergyMap` трека |
 | `Dsp/SpectrumAnalyzer.cs` | Hann, FFT, log bands, normalization |
 | `Dsp/RealtimeAudioAnalyzer.cs` | Levels, zero-crossing, spectral features, beat pulse и эвристический tempo |
+| `Dsp/TrackEnergyMap.cs` | RMS-профиль по секундам и sampling arrangement lift/approach/intensity |
 | `Terminal/TerminalSession.cs` | Alternate-screen RAII |
 | `Terminal/ScreenBuffer.cs` | Styled cells, clipping/sanitization, ANSI diff batching |
 | `tests/Yacplayer.Tests/` | Unit tests чистой логики |
@@ -398,7 +401,7 @@ Browser layout:
 
 ### Музыкально-реактивная тема UI
 
-`ReactiveThemeController` (только UI-loop) преобразует сглаженные музыкальные характеристики в ограниченную цветовую схему для рамок панелей, фонов зелёных заголовков панелей, фона активной строки очереди, футера, столбцов спектра (реактивный градиент сохраняет форму зелёно-тёплого перехода, повёрнутую к оттенку темы и осветлённую пульсом баса; верхний маркер столбца следует теме вместо статического жёлтого), заполнения прогресс-бара и точек waveform. Энергия баса управляет пульсацией яркости (single-pole attack ≈ 50 мс, release 280–380 мс, амплитуда примерно 18–28% светлоты в зависимости от режима), spectral centroid логарифмически отображается в ограниченный диапазон оттенка от жёлто-зелёного до циана (не полный цветовой круг) с постоянной времени 1.6–2.2 с, а RMS модулирует насыщенность вокруг статического зелёного. Обновления гейтятся примерно 12.5 FPS независимо от частоты UI/FFT. Когда `ReactiveUiMode` = `Off` (значение по умолчанию), контроллер ничего не выполняет, и рендерер сохраняет статическую ANSI-тему; когда воспроизведение не активно или характеристики недоступны, параметры плавно возвращаются к базовой теме через путь release, а не переключаются скачком. Цвета выводятся как RGB true-color SGR-последовательности (спектр уже требует true color); терминалы без true-color видят те же последовательности и могут понижать их — это соответствует существующему поведению спектра. Геометрия, layout, информационный текст и семантически значимые цвета не меняются.
+`ReactiveThemeController` (только UI-loop) преобразует сглаженные музыкальные характеристики в ограниченную цветовую схему для рамок панелей, фонов зелёных заголовков панелей, фона активной строки очереди, футера, столбцов спектра (реактивный градиент сохраняет форму зелёно-тёплого перехода, повёрнутую к оттенку темы и осветлённую пульсом баса; верхний маркер столбца следует теме вместо статического жёлтого), заполнения прогресс-бара и точек waveform. Энергия баса управляет пульсацией яркости (single-pole attack ≈ 50 мс, release 280–380 мс, амплитуда примерно 18–28% светлоты в зависимости от режима), spectral centroid логарифмически отображается в ограниченный диапазон оттенка от жёлто-зелёного до циана (не полный цветовой круг) с постоянной времени 1.6–2.2 с, а RMS модулирует насыщенность вокруг статического зелёного. Когда тема включена, `TrackEnergyMapLoader` также сканирует текущий трек офлайн — `TrackEnergyScanner` декодирует его через отдельный `AudioFileReader` в thread pool в блоки RMS по секунде, — и контроллер выводит фактор `drama` из карты: подъём громкости относительно предыдущего окна (~10 с) плюс приближение более громкого следующего окна (~10 с), смешанные с относительно трека громкостью и сглаженные attack 1.5 с / release 4 с. Drama масштабирует амплитуду пульса (0.4x..1.6x), насыщенность и скорость оттенка, поэтому спокойные секции остаются тихими, а припевы достигают полной амплитуды, и сам переход плывёт. Без карты (Off, сбой скана или первые секунды трека) все масштабы равны ровно 1. Обновления гейтятся примерно 12.5 FPS независимо от частоты UI/FFT. Когда `ReactiveUiMode` = `Off` (значение по умолчанию), контроллер ничего не выполняет, и рендерер сохраняет статическую ANSI-тему; когда воспроизведение не активно или характеристики недоступны, параметры плавно возвращаются к базовой теме через путь release, а не переключаются скачком. Цвета выводятся как RGB true-color SGR-последовательности (спектр уже требует true color); терминалы без true-color видят те же последовательности и могут понижать их — это соответствует существующему поведению спектра. Геометрия, layout, информационный текст и семантически значимые цвета не меняются.
 
 ## 14. Input routing
 
