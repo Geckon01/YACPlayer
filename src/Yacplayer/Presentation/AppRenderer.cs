@@ -439,7 +439,10 @@ internal sealed class AppRenderer
                     Math.Max(top, bottom - barHeight),
                     "-",
                     theme.Active
-                        ? ReactiveThemeController.FromHsl(theme.Hue, Math.Clamp(theme.Saturation, 0.5, 0.95) * 0.85, 0.78 + theme.Pulse * 0.15)
+                        ? ReactiveThemeController.FromHsl(
+                            theme.Hue,
+                            Math.Clamp(theme.Saturation, 0.5, 0.95) * 0.85,
+                            Math.Clamp(0.78 + theme.Pulse * 0.15 + theme.BarKick * 0.12, 0.4, 0.96))
                         : CellColor.Yellow,
                     bold: true);
             }
@@ -449,12 +452,14 @@ internal sealed class AppRenderer
     private static CellColor ReactiveGradient(ReactiveTheme theme, double ratio)
     {
         // Same green-to-warm ramp shape as the static gradient, rotated to the
-        // smoothed reactive hue and gently brightened by the bass pulse.
+        // smoothed reactive hue and gently brightened by the bass pulse. On a
+        // predicted beat of a meaty section the bars blink brighter (BarKick)
+        // with an exponential decay, so the spectrum winks in rhythm.
         ratio = Math.Clamp(ratio, 0, 1);
         var saturation = Math.Clamp(theme.Saturation, 0.55, 0.95);
         var hue = theme.Hue + 38 * ratio;
-        var lightness = 0.34 + 0.30 * ratio + theme.Pulse * 0.5;
-        return ReactiveThemeController.FromHsl(hue, saturation, Math.Clamp(lightness, 0.2, 0.85));
+        var lightness = 0.34 + 0.30 * ratio + theme.Pulse * 0.5 + theme.BarKick * 0.22;
+        return ReactiveThemeController.FromHsl(hue, saturation, Math.Clamp(lightness, 0.2, 0.9));
     }
 
     private static CellColor SpectrumGradient(double ratio)

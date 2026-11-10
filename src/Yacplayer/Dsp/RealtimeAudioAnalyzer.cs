@@ -15,7 +15,8 @@ public readonly record struct RealtimeAudioSnapshot(
     float Bpm,
     float BeatConfidence,
     bool BeatDetected,
-    float BassEnergy)
+    float BassEnergy,
+    float SpectralDensity = 1f)
 {
     public static RealtimeAudioSnapshot Empty => new(
         false,
@@ -36,6 +37,13 @@ public sealed class RealtimeAudioAnalyzer
     private const int MetricsFftSize = 2048;
     private const int OnsetFftSize = 1024;
     private const int OnsetHopSize = 256;
+
+    // Log-spaced bands used to estimate how much of the spectrum is active:
+    // one timbral source (voice, bass, a lone guitar) occupies few bands,
+    // while a full arrangement lights most of them up.
+    private const int DensityBands = 16;
+    private const double DensityLowHertz = 60;
+    private const double DensityHighHertz = 12000;
 
     private readonly SampleRingBuffer _ring;
     private readonly float[] _readBuffer = new float[8192];
@@ -58,6 +66,7 @@ public sealed class RealtimeAudioAnalyzer
     private int _onsetWindowCount;
     private int _samplesSinceOnsetFrame;
     private long _processedSamples;
+    private readonly double[] _densityBandEnergy = new double[DensityBands];
     private bool _hasPreviousSpectrum;
     private bool _fluxBaselineInitialized;
     private double _fluxMean;
@@ -255,6 +264,7 @@ public sealed class RealtimeAudioAnalyzer
         double bassMagnitude = 0;
         var minimumBin = Math.Max(1, (int)Math.Ceiling(40d * MetricsFftSize / _sampleRate));
         var bassBin = Math.Min(MetricsFftSize / 2, (int)(150d * MetricsFftSize / _sampleRate));
+        Array.Clear(_densityBandEnergy);
         for (var bin = minimumBin; bin < MetricsFftSize / 2; bin++)
         {
             var magnitude = _metricsFft[bin].Magnitude;
@@ -271,6 +281,12 @@ public sealed class RealtimeAudioAnalyzer
                 dominantMagnitude = magnitude;
                 dominantFrequency = frequency;
             }
+
+            var band = DensityBandFor(frequency);
+            if (band >= 0)
+            {
+                _densityBandEnergy[band] += magnitude * magnitude;
+            }
         }
 
         var rms = Math.Sqrt(squareSum / MetricsFftSize);
@@ -286,7 +302,53 @@ public sealed class RealtimeAudioAnalyzer
             _beatTracker.Bpm,
             _beatTracker.Confidence,
             _beatTracker.BeatDetected,
-            (float)NormalizeBass(bassMagnitude));
+            (float)NormalizeBass(bassMagnitude),
+            (float)NormalizeDensity());
+    }
+
+    private int DensityBandFor(double frequency)
+    {
+        if (frequency < DensityLowHertz || frequency >= DensityHighHertz)
+        {
+            return -1;
+        }
+
+        var position = Math.Log(frequency / DensityLowHertz) /
+                       Math.Log(DensityHighHertz / DensityLowHertz) * DensityBands;
+        var band = (int)position;
+        return Math.Min(DensityBands - 1, Math.Max(0, band));
+    }
+
+    private double NormalizeDensity()
+    {
+        // Normalized spectral entropy over the log bands: one narrow timbral
+        // source (voice, bass, a lone guitar) concentrates its energy in one or
+        // two bands and lands near 0, while a full arrangement spreads energy
+        // across many bands and approaches 1. Loudness-independent by design.
+        double total = 0;
+        for (var band = 0; band < DensityBands; band++)
+        {
+            total += _densityBandEnergy[band];
+        }
+
+        if (total <= 1e-20)
+        {
+            return 0;
+        }
+
+        double entropy = 0;
+        for (var band = 0; band < DensityBands; band++)
+        {
+            if (_densityBandEnergy[band] <= 0)
+            {
+                continue;
+            }
+
+            var probability = _densityBandEnergy[band] / total;
+            entropy -= probability * Math.Log(probability);
+        }
+
+        return Math.Clamp(entropy / Math.Log(DensityBands), 0, 1);
     }
 
     private static double NormalizeBass(double bassMagnitude)

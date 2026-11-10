@@ -18,7 +18,8 @@ public readonly record struct ReactiveTheme(
     double Saturation = 0.82,
     double Pulse = 0,
     double VersionGlow = 0,
-    double VersionHue = 0);
+    double VersionHue = 0,
+    double BarKick = 0);
 
 /// <summary>
 /// Converts smoothed music features (bass energy, spectral centroid, overall energy)
@@ -41,13 +42,24 @@ internal sealed class ReactiveThemeController
     private const double QuietScale = 0.4;
     private const double LoudScale = 1.6;
 
+    // Instrumentation weight: a single timbral source (voice, bass, lone
+    // guitar) narrows the spectral density and keeps the reaction subdued even
+    // when loud; a full arrangement restores the full base amplitude.
+    private const double SoloWeight = 0.55;
+
+    // A meaty moment is needed before the spectrum blinks on the beat:
+    // sustained bass and wide instrumentation, not an isolated thump.
+    private const double KickGate = 0.55;
+
     private readonly double _timeScale;
     private long _lastUpdateMs = long.MinValue;
     private long _lastCallMs = long.MinValue;
     private bool _previousBeat;
     private double _versionGlow;
     private double _versionHue;
+    private double _barKick;
     private double _bass;
+    private double _density = 1;
     private double _hue = BaseHue;
     private double _saturation = 0.82;
     private double _drama = 1;
@@ -89,8 +101,10 @@ internal sealed class ReactiveThemeController
             _lastCallMs = long.MinValue;
             _previousBeat = false;
             _versionGlow = 0;
+            _barKick = 0;
             _arrangementActive = false;
             _drama = 1;
+            _density = 1;
             return _current;
         }
 
@@ -106,10 +120,22 @@ internal sealed class ReactiveThemeController
         {
             _versionGlow = 1;
             _versionHue = (_versionHue + GoldenAngle) % 360;
+
+            // Only meaty sections make the spectrum blink on the beat; a lone
+            // guitar or quiet passage keeps the bars steady.
+            if (KickGate <= _bass * _density)
+            {
+                _barKick = 1;
+            }
         }
         else if (_versionGlow > 0)
         {
             _versionGlow = _versionGlow <= 0.02 ? 0 : _versionGlow * Math.Exp(-callDt / 0.22);
+        }
+
+        if (_barKick > 0 && !(beat && !_previousBeat))
+        {
+            _barKick = _barKick <= 0.02 ? 0 : _barKick * Math.Exp(-callDt / 0.25);
         }
 
         _previousBeat = beat;
@@ -123,8 +149,13 @@ internal sealed class ReactiveThemeController
         var elapsedMs = nowMs - _lastUpdateMs;
         if (elapsedMs < UpdateIntervalMs)
         {
-            // Colors are gated, but the version-flash decay still advances each frame.
-            return _current with { VersionGlow = _versionGlow, VersionHue = _versionHue };
+            // Colors are gated, but the version-flash and bar-kick decays still advance.
+            return _current with
+            {
+                VersionGlow = _versionGlow,
+                VersionHue = _versionHue,
+                BarKick = _barKick,
+            };
         }
 
         _lastUpdateMs = nowMs;
@@ -138,6 +169,17 @@ internal sealed class ReactiveThemeController
             ? 1 - Math.Exp(-dt / 0.05)
             : 1 - Math.Exp(-dt / (visualizer ? 0.28 : 0.38));
         _bass += (bassTarget - _bass) * alpha;
+
+        // Spectral density distinguishes a single timbral source (voice, bass,
+        // lone guitar -> calm) from a growing arrangement (wide -> reactive).
+        // Slow envelopes keep instrument entries and exits from flickering.
+        var densityTarget = reacting && features.Available
+            ? Math.Clamp(features.SpectralDensity, 0, 1)
+            : 1;
+        var densityAlpha = densityTarget > _density
+            ? 1 - Math.Exp(-dt / 1.0)
+            : 1 - Math.Exp(-dt / 2.5);
+        _density += (densityTarget - _density) * densityAlpha;
 
         var arrangementActive = reacting && arrangement is not null;
         if (arrangementActive)
@@ -188,6 +230,13 @@ internal sealed class ReactiveThemeController
             saturationTarget *= 0.6 + 0.85 * _drama;
         }
 
+        if (reacting && features.Available)
+        {
+            // Fewer instruments dull the palette a touch; a full arrangement
+            // restores full saturation. The factor is 1 at full density.
+            saturationTarget *= 0.75 + 0.25 * _density;
+        }
+
         saturationTarget = Math.Clamp(saturationTarget, 0.45, 0.98);
         _saturation += (saturationTarget - _saturation) * (1 - Math.Exp(-dt / 2.0));
 
@@ -202,6 +251,9 @@ internal sealed class ReactiveThemeController
         // The arrangement drama factor (1.0 when no map is available) scales the
         // base amplitude so quiet sections stay calm and choruses push to full.
         var amplitude = _arrangementActive ? QuietScale + (LoudScale - QuietScale) * _drama : 1;
+        // Instrumentation multiplier: a lone voice or guitar keeps the whole UI
+        // subdued even when loud (1.0 - SoloWeight at density 0, 1.0 at full).
+        amplitude *= 1 - SoloWeight + SoloWeight * _density;
         var pulse = _bass * (visualizer ? 0.28 : 0.18) * amplitude;
         var saturation = Math.Clamp(_saturation, 0.40, 0.98);
         var border = FromHsl(_hue, saturation * 0.85, Math.Clamp(0.40 + pulse * 1.1, 0.3, 0.82));
@@ -209,7 +261,8 @@ internal sealed class ReactiveThemeController
         var row = BackgroundFromHsl(_hue, saturation * 0.85, Math.Clamp(0.30 + pulse * 1.9, 0.22, 0.62));
         var accent = FromHsl(_hue, saturation * 0.75, Math.Clamp(0.62 + pulse * 0.8, 0.5, 0.92));
         _current = new ReactiveTheme(
-            true, border, title, row, accent, _hue, saturation, pulse, _versionGlow, _versionHue);
+            true, border, title, row, accent, _hue, saturation, pulse,
+            _versionGlow, _versionHue, _barKick);
         return _current;
     }
 

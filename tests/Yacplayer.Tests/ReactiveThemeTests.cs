@@ -349,6 +349,109 @@ public class ReactiveThemeTests
     }
 
     [Fact]
+    public void SpectralDensityIsLowForToneAndHighForBroadbandNoise()
+    {
+        var toneRing = new SampleRingBuffer(65536);
+        var toneAnalyzer = new RealtimeAudioAnalyzer(toneRing);
+        var tone = FeedTone(toneRing, toneAnalyzer, 440f);
+
+        var noiseRing = new SampleRingBuffer(65536);
+        var noiseAnalyzer = new RealtimeAudioAnalyzer(noiseRing);
+        var noise = FeedNoise(noiseRing, noiseAnalyzer);
+
+        // A single timbral source concentrates energy in a few bands; a full
+        // arrangement lights most of the spectrum up.
+        Assert.True(tone.SpectralDensity < 0.5f);
+        Assert.True(noise.SpectralDensity > tone.SpectralDensity + 0.2f);
+    }
+
+    [Fact]
+    public void SparseInstrumentationSubduesTheResponseAndWideArrangementRestoresIt()
+    {
+        // Same loud bass energy: a lone instrument (low density) must react
+        // well below a full arrangement (high density).
+        var solo = new ReactiveThemeController(timeScale: 1000);
+        var band = new ReactiveThemeController(timeScale: 1000);
+        ReactiveTheme soloTheme = default;
+        ReactiveTheme bandTheme = default;
+        for (var frame = 0; frame <= 100; frame++)
+        {
+            soloTheme = solo.Update(
+                Features(bass: 1f) with { SpectralDensity = 0.05f }, true, ReactiveUiMode.Visualizer, frame * 80L);
+            bandTheme = band.Update(
+                Features(bass: 1f) with { SpectralDensity = 1f }, true, ReactiveUiMode.Visualizer, frame * 80L);
+        }
+
+        Assert.True(soloTheme.Pulse < bandTheme.Pulse * 0.6);
+    }
+
+    [Fact]
+    public void BarKickBlipsOnBeatOnlyForMeatySections()
+    {
+        // Quiet and sparse: even a warmed-up beat must not make the bars blink.
+        var calm = new ReactiveThemeController();
+        for (var frame = 0; frame < 3; frame++)
+        {
+            calm.Update(
+                Features(bass: 0.1f) with { SpectralDensity = 0.2f }, true, ReactiveUiMode.Subtle, frame * 100L);
+        }
+
+        var calmBeat = calm.Update(
+            Features(bass: 0.1f) with { BeatDetected = true, SpectralDensity = 0.2f },
+            true, ReactiveUiMode.Subtle, 300);
+        Assert.Equal(0d, calmBeat.BarKick);
+
+        // Loud and wide: warm the envelopes, then the beat fires the kick.
+        var meaty = new ReactiveThemeController();
+        for (var frame = 0; frame < 3; frame++)
+        {
+            meaty.Update(
+                Features(bass: 1f) with { SpectralDensity = 1f }, true, ReactiveUiMode.Visualizer, frame * 100L);
+        }
+
+        var meatyBeat = meaty.Update(
+            Features(bass: 1f) with { BeatDetected = true, SpectralDensity = 1f },
+            true, ReactiveUiMode.Visualizer, 300);
+        Assert.Equal(1d, meatyBeat.BarKick);
+
+        var rested = meaty.Update(
+            Features(bass: 1f) with { SpectralDensity = 1f }, true, ReactiveUiMode.Visualizer, 360);
+        Assert.True(rested.BarKick > 0 && rested.BarKick < 1d);
+
+        var offBeat = meaty.Update(
+            Features(bass: 1f) with { BeatDetected = true, SpectralDensity = 1f },
+            true, ReactiveUiMode.Off, 420);
+        Assert.Equal(0d, offBeat.BarKick);
+    }
+
+    [Fact]
+    public void RendererBrightensSpectrumBarsOnBarKick()
+    {
+        var playlist = new Playlist();
+        var playback = new PlaybackSnapshot(
+            PlaybackState.Playing, "a.mp3", default, default, 48000, 2, 75, false);
+        var bands = Enumerable.Repeat(1f, 64).ToArray();
+        var frame = new VisualizationFrame(bands, new float[4096], 0, RealtimeAudioSnapshot.Empty);
+        var browser = new BrowserViewState("C:\\", [], 0, false);
+        var hiddenMenu = new SettingsViewState(false, 0, false, "", "");
+        var renderer = new AppRenderer();
+
+        var controller = new ReactiveThemeController();
+        var theme = controller.Update(
+            Features(bass: 1f) with { BeatDetected = true, SpectralDensity = 1f },
+            true, ReactiveUiMode.Visualizer, 0);
+        var output = renderer.Draw(100, 24, new AppRenderState(
+            playlist, new PlayerSettings(), playback, frame, browser, hiddenMenu, false, false, "Ready",
+            ReactiveTheme: theme)).Diff(null);
+
+        var expectedBottom = ReactiveThemeController.FromHsl(
+            theme.Hue,
+            Math.Clamp(theme.Saturation, 0.55, 0.95),
+            Math.Clamp(0.34 + theme.Pulse * 0.5 + theme.BarKick * 0.22, 0.2, 0.9));
+        Assert.Contains($"\u001b[38;2;{expectedBottom.R};{expectedBottom.G};{expectedBottom.B}m", output);
+    }
+
+    [Fact]
     public void BassEnergyIsHighForLowToneAndLowForHighTone()
     {
         var bassRing = new SampleRingBuffer(65536);
@@ -378,6 +481,30 @@ public class ReactiveThemeTests
             for (var i = 0; i < block.Length; i++)
             {
                 block[i] = 0.5f * (float)Math.Sin(2 * Math.PI * frequency * (written + i) / sampleRate);
+            }
+
+            ring.Write(block);
+            written += block.Length;
+            snapshot = analyzer.Analyze(sampleRate);
+        }
+
+        return snapshot;
+    }
+
+    private static RealtimeAudioSnapshot FeedNoise(
+        SampleRingBuffer ring,
+        RealtimeAudioAnalyzer analyzer)
+    {
+        const int sampleRate = 48000;
+        var random = new Random(20261111);
+        var snapshot = RealtimeAudioSnapshot.Empty;
+        var written = 0;
+        while (written < sampleRate * 2)
+        {
+            var block = new float[2048];
+            for (var i = 0; i < block.Length; i++)
+            {
+                block[i] = 0.5f * (2 * (float)random.NextDouble() - 1);
             }
 
             ring.Write(block);
