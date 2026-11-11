@@ -265,6 +265,28 @@ public class ReactiveThemeTests
     }
 
     [Fact]
+    public void HeaderShowsTheReactiveUiStatus()
+    {
+        var playlist = new Playlist();
+        var playback = new PlaybackSnapshot(PlaybackState.Playing, "a.mp3", default, default, 48000, 2, 75, false);
+        var frame = new VisualizationFrame(new float[64], new float[4096], 0, RealtimeAudioSnapshot.Empty);
+        var browser = new BrowserViewState("C:\\", [], 0, false);
+        var hiddenMenu = new SettingsViewState(false, 0, false, "", "");
+        var renderer = new AppRenderer();
+
+        var offOutput = renderer.Draw(120, 24, new AppRenderState(
+            playlist, new PlayerSettings(), playback, frame, browser, hiddenMenu, false, false, "Ready")).Diff(null);
+        Assert.Contains("UI: Off", offOutput);
+
+        var visualizerOutput = renderer.Draw(120, 24, new AppRenderState(
+            playlist,
+            new PlayerSettings { ReactiveUiMode = ReactiveUiMode.Visualizer },
+            playback, frame, browser, hiddenMenu, false, false, "Ready")).Diff(null);
+        Assert.Contains("UI: Visualizer", visualizerOutput);
+        Assert.DoesNotContain("UI: Off", visualizerOutput);
+    }
+
+    [Fact]
     public void SpectrumKeepsStaticGradientWhenOffAndFollowsThemeWhenReactive()
     {
         var playlist = new Playlist();

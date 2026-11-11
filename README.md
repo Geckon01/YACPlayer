@@ -20,7 +20,7 @@ Implemented:
 - startup with either a file or a directory;
 - built-in Midnight Commander-style browser with directories, `[..]`, a `This PC` drive list, and file/folder queue insertion;
 - cancellable background directory loading that keeps the TUI responsive, plus hash-based deduplication and batch queue insertion for large folders;
-- adaptive ANSI/VT interface with colored panels, white captions on green title backgrounds, the current version in the top-right header, and differential rendering with full-row refresh for variable-width Unicode;
+- adaptive ANSI/VT interface with colored panels, white captions on green title backgrounds, the current version in the top-right header, the reactive UI status in the header, and differential rendering with full-row refresh for variable-width Unicode;
 - switchable Hann-windowed FFT spectrum with exact-window accumulation, a smooth true-color green/yellow/red gradient, `.` waveform, and disabled visualizer modes; spectrum and waveform amplitude are independent of output volume and mute;
 - optional realtime audio-analysis panel with multi-band onset detection, PLL-tracked BPM/beat confidence and an indicator that flashes in rhythm, plus RMS/peak/crest levels, zero-crossing rate, spectral centroid, and dominant frequency; its PCM tap and calculations stop when disabled;
 - a full-screen settings menu whose changes apply and save immediately to per-user JSON, including a configurable startup folder;
@@ -183,7 +183,7 @@ dotnet test Yacplayer.sln -c Release
 
 GitHub Actions runs the same restore, Release build, and test sequence on Windows for every push and pull request.
 
-The current suite contains 40 device-independent unit tests covering CLI parsing, four-part assembly versioning, playlist behavior and restored repeat/shuffle state including single-track Repeat All, batch insertion during an active shuffle cycle, bounded audio-event delivery, list viewport scrolling/clamping, ring-buffer wrapping/latest/exact reads, independently gated pre-volume PCM tapping, realtime level/spectrum/tempo analysis including partial FFT accumulation, player/browser/settings layout rendering, settings interaction and persistence, browser-controller deduplication, ANSI/true-color diff styles, batching and Unicode-row refresh, FFT reconfiguration, metadata fallback, and cancellable browser filtering/sorting.
+The current suite contains 71 device-independent unit tests covering CLI parsing, four-part assembly versioning, playlist behavior and restored repeat/shuffle state including single-track Repeat All, batch insertion during an active shuffle cycle, bounded audio-event delivery, list viewport scrolling/clamping, ring-buffer wrapping/latest/exact reads under concurrent producer/consumer stress, independently gated pre-volume PCM tapping, realtime level/spectrum/density/tempo analysis including partial FFT accumulation, offline track-energy maps with the drama lift window, the reactive theme envelopes, instrumentation gating, bar kick, and header status rendering, player/browser/settings layout rendering, settings interaction and persistence, browser-controller deduplication, ANSI/true-color diff styles, batching and Unicode-row refresh, FFT reconfiguration, metadata fallback, and cancellable browser filtering/sorting.
 
 Framework-dependent win-x64 publish:
 

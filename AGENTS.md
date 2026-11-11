@@ -31,7 +31,7 @@ Do not remove or weaken this contract. Its purpose is to let a new agent underst
 - Metadata: ATL 7.19.0, loaded lazily for the current track only.
 - Persistence: per-user JSON at `%LOCALAPPDATA%\Yacplayer\settings.json`.
 - Distribution: framework-dependent win-x64 publish, optional win-x64 Native AOT publish, an Inno Setup 6 installer, and a self-contained x64 MSIX build for Microsoft Store.
-- Automated tests: 70 xUnit tests that avoid real audio hardware.
+- Automated tests: 71 xUnit tests that avoid real audio hardware.
 - License: MIT. The repository and user-facing documentation carry an AI-assisted/generated-code notice.
 - Public documentation is English-first with Russian counterparts.
 
@@ -76,6 +76,7 @@ Do not remove or weaken this contract. Its purpose is to let a new agent underst
 - The wide layout contains header, Now Playing, Queue, visualizer, Playback, and Audio Info panels. Compact terminals receive a reduced layout.
 - Green panel-title backgrounds use white bold text while their borders remain bright green.
 - The top-right header shows the running assembly version as `vA.B.C.D` and hides it only when the terminal is too narrow.
+- The second header row shows the playback state, volume bar, repeat, shuffle, the reactive UI mode (`UI: Off|Subtle|Visualizer`, live from settings), and the output backend, truncated to the terminal width.
 - The progress bar uses solid green `█` cells and a `·` remainder.
 - Spectrum columns use `█`, with a smooth ANSI true-color green/yellow/red gradient based on height and a yellow top marker.
 - `V` cycles Spectrum → Waveform → Off. Switching mode resets visualization backlog, and FFT is not calculated in Waveform or Off modes. Spectrum analysis consumes only complete FFT windows, so high UI FPS and 4096-bin mode cannot discard partial accumulation.
@@ -304,6 +305,8 @@ Local-only caution at the time of this update: `yacplayer-history-backup-2026110
 ## Current verification record
 
 Update this section after every material change.
+
+- Reactive UI header status added on 2026-11-11: the second header row now shows `UI: Off|Subtle|Visualizer` from the persisted `ReactiveUiMode` between the shuffle and output fields, so the current theme mode is visible without opening the settings menu or watching the transient `T` message; the row remains truncated to the terminal width by the existing `Fit` clamp. Added a renderer regression asserting `UI: Off` with default settings and `UI: Visualizer` with the mode set, with the wrong label absent. `dotnet build Yacplayer.sln -c Release --no-restore` succeeded with 0 warnings/0 errors and `dotnet test Yacplayer.sln -c Release --no-build` passed 71/71 tests. Appearance at narrow terminal widths (where the tail including the new field truncates) remains manually unverified; no binary artifacts were rebuilt.
 
 - Preceding-window collapse fixed on 2026-11-11: `TrackEnergyMap.Sample` built its past window with `WindowSpan(10, 2)`, but `WindowSpan` orders its bounds (`end = max(start, ...)`), so the window collapsed to the single block at t-10s and the drama lift compared the current loudness against one second instead of the documented t-10s..t-2s average. The call is now `WindowSpan(2, 10)` with a comment recording the ordering contract; the future window (3..13 s) was already correctly ordered. Existing tests missed it because their synthetic intros are flat, where a single block equals the window average; the new regression hides one loud second inside an otherwise-quiet preceding window and asserts the averaged lift, which fails under the old code. `dotnet build Yacplayer.sln -c Release --no-restore` succeeded with 0 warnings/0 errors and `dotnet test Yacplayer.sln -c Release --no-build` passed 70/70 tests. Real-music lift smoothness remains manually unverified; no binary artifacts were rebuilt.
 

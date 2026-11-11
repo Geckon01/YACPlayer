@@ -20,7 +20,7 @@ Yacplayer — локальный музыкальный плеер для Window
 - запуск с файлом или каталогом;
 - встроенный Midnight Commander-подобный браузер: каталоги, `[..]`, список дисков `This PC`, добавление файла/каталога;
 - отменяемая фоновая загрузка каталогов без остановки TUI, hash-дедупликация и пакетное добавление больших папок в очередь;
-- адаптивный ANSI/VT-интерфейс с цветными панелями, белыми надписями на зелёном фоне заголовков, текущей версией справа в верхней рамке и diff-rendering с полной перерисовкой строк для Unicode переменной ширины;
+- адаптивный ANSI/VT-интерфейс с цветными панелями, белыми надписями на зелёном фоне заголовков, текущей версией справа в верхней рамке, статусом реактивного UI в шапке и diff-rendering с полной перерисовкой строк для Unicode переменной ширины;
 - переключаемые FFT-спектр с Hann window, накоплением полного окна и плавным true-color градиентом зелёный/жёлтый/красный, waveform из `.` и отключённый режим визуализатора; амплитуда спектра и waveform не зависит от выходной громкости и mute;
 - опциональная панель realtime audio analysis: многополосное обнаружение атак, отслеживаемые через PLL BPM/beat confidence и мигающий в ритм индикатор, а также RMS/peak/crest, zero-crossing rate, spectral centroid и dominant frequency; при отключении останавливаются PCM tap и вычисления;
 - полноэкранное меню настроек: изменения сразу применяются и сохраняются в JSON профиля пользователя, включая настраиваемую стартовую папку;
@@ -183,7 +183,7 @@ dotnet test Yacplayer.sln -c Release
 
 GitHub Actions выполняет ту же последовательность restore, Release-сборки и тестов на Windows для каждого push и pull request.
 
-Текущий набор содержит 40 unit-тестов без требования аудиоустройства: CLI, четырёхкомпонентная assembly version, playlist и восстановление repeat/shuffle, включая single-track Repeat All, batch insert внутри активного shuffle-cycle, bounded audio-event delivery, прокрутка/clamp list viewport, ring buffer wrapping/latest/exact reads, независимо отключаемый pre-volume PCM tap, realtime level/spectrum/tempo analysis с накоплением неполных FFT-окон, рендеринг player/browser/settings, взаимодействие с настройками и их сохранение, дедупликация в browser controller, ANSI/true-color diff styles, batching и обновление Unicode-строк, перенастройка FFT, metadata fallback и отменяемая browser filtering/sorting.
+Текущий набор содержит 71 unit-тест без требования аудиоустройства: CLI, четырёхкомпонентная assembly version, playlist и восстановление repeat/shuffle, включая single-track Repeat All, batch insert внутри активного shuffle-cycle, bounded audio-event delivery, прокрутка/clamp list viewport, ring buffer wrapping/latest/exact reads под конкурентным стрессом producer/consumer, независимо отключаемый pre-volume PCM tap, realtime level/spectrum/density/tempo analysis с накоплением неполных FFT-окон, офлайн карты энергии трека с окном drama-lift, огибающие реактивной темы, гейтинг инструментовки, bar kick и рендеринг статуса в шапке, рендеринг player/browser/settings, взаимодействие с настройками и их сохранение, дедупликация в browser controller, ANSI/true-color diff styles, batching и обновление Unicode-строк, перенастройка FFT, metadata fallback и отменяемая browser filtering/sorting.
 
 Публикация framework-dependent win-x64:
 

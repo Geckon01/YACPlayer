@@ -59,7 +59,7 @@ internal sealed class AppRenderer
             ? "> PLAYING"
             : playback.State.ToString().ToUpperInvariant();
         var volumeBlocks = Math.Clamp(playback.Volume / 10, 0, 10);
-        var header = $"{playbackState}  |  Vol {playback.Volume,3}% {new string('█', volumeBlocks)}{new string('.', 10 - volumeBlocks)}  |  Repeat: {playlist.Repeat}  |  Shuffle: {(playlist.Shuffle ? "On" : "Off")}  |  Output: WASAPI";
+        var header = $"{playbackState}  |  Vol {playback.Volume,3}% {new string('█', volumeBlocks)}{new string('.', 10 - volumeBlocks)}  |  Repeat: {playlist.Repeat}  |  Shuffle: {(playlist.Shuffle ? "On" : "Off")}  |  UI: {settings.ReactiveUiMode}  |  Output: WASAPI";
         screen.Write(14, 1, Fit(header, Math.Max(1, width - 16)), CellColor.White, bold: true);
         if (state.BrowserVisible)
         {
