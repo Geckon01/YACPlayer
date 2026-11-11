@@ -48,7 +48,10 @@ internal sealed class TrackEnergyMap
         var halfWindow = (int)Math.Round(1.0 / _secondsPerBlock);
         var now = Mean(center - halfWindow, center + halfWindow);
 
-        var pastSpan = WindowSpan(10, 2);
+        // WindowSpan orders its bounds, so the preceding window is (2s, 10s):
+        // asking for (10, 2) would collapse end onto start and compare against
+        // the single block at t-10s instead of the average over t-10s..t-2s.
+        var pastSpan = WindowSpan(2, 10);
         var past = Mean(center - pastSpan.end, center - pastSpan.start);
 
         var futureSpan = WindowSpan(3, 13);

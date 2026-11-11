@@ -44,6 +44,28 @@ public class TrackEnergyTests
     }
 
     [Fact]
+    public void LiftAveragesTheWholePrecedingWindowNotJustTheBlockAtTenSeconds()
+    {
+        // 40 s. Around t=20 the preceding window is blocks 10..18: nine seconds
+        // of quiet with one loud second hidden in the middle at block 16. A lift
+        // measured against only the block at t-10 (the old WindowSpan argument
+        // bug) would ignore that loud second and read the full 20 dB lift.
+        var blocks = new float[40];
+        Array.Fill(blocks, -45f, 0, 19);
+        blocks[16] = -5;
+        Array.Fill(blocks, -25f, 19, 3);
+        Array.Fill(blocks, -45f, 22, 18);
+        var map = new TrackEnergyMap(blocks, 1.0);
+
+        var sample = map.Sample(20);
+
+        // now = mean(19..21) = -25; the window average is (8 * -45 + -5) / 9.
+        var expectedPast = (8 * -45d + -5d) / 9d;
+        Assert.True(Math.Abs(sample.Lift - (-25d - expectedPast)) < 0.1);
+        Assert.True(sample.Lift < 18);
+    }
+
+    [Fact]
     public void DramaScalesPulseAmplitudeAndGlidesBackAfterTheSection()
     {
         // 40 s: quiet intro, five seconds of chorus at 30 s, quiet outro.

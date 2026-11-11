@@ -31,7 +31,7 @@ Do not remove or weaken this contract. Its purpose is to let a new agent underst
 - Metadata: ATL 7.19.0, loaded lazily for the current track only.
 - Persistence: per-user JSON at `%LOCALAPPDATA%\Yacplayer\settings.json`.
 - Distribution: framework-dependent win-x64 publish, optional win-x64 Native AOT publish, an Inno Setup 6 installer, and a self-contained x64 MSIX build for Microsoft Store.
-- Automated tests: 69 xUnit tests that avoid real audio hardware.
+- Automated tests: 70 xUnit tests that avoid real audio hardware.
 - License: MIT. The repository and user-facing documentation carry an AI-assisted/generated-code notice.
 - Public documentation is English-first with Russian counterparts.
 
@@ -304,6 +304,8 @@ Local-only caution at the time of this update: `yacplayer-history-backup-2026110
 ## Current verification record
 
 Update this section after every material change.
+
+- Preceding-window collapse fixed on 2026-11-11: `TrackEnergyMap.Sample` built its past window with `WindowSpan(10, 2)`, but `WindowSpan` orders its bounds (`end = max(start, ...)`), so the window collapsed to the single block at t-10s and the drama lift compared the current loudness against one second instead of the documented t-10s..t-2s average. The call is now `WindowSpan(2, 10)` with a comment recording the ordering contract; the future window (3..13 s) was already correctly ordered. Existing tests missed it because their synthetic intros are flat, where a single block equals the window average; the new regression hides one loud second inside an otherwise-quiet preceding window and asserts the averaged lift, which fails under the old code. `dotnet build Yacplayer.sln -c Release --no-restore` succeeded with 0 warnings/0 errors and `dotnet test Yacplayer.sln -c Release --no-build` passed 70/70 tests. Real-music lift smoothness remains manually unverified; no binary artifacts were rebuilt.
 
 - Documentation-only clarification on 2026-11-11 (no source change): the realtime-analysis cost model was written down in `docs/ARCHITECTURE.md`/`.ru.md` and the AGENTS project snapshot. The tempo path (about 187 onset FFTs per second plus the eight-agent PLL bank at 48 kHz) dominates UI-loop cost, while the metrics FFT, bass, and spectral-density features share one 2048-point transform; none of it runs on the audio callback, which only writes the bounded analysis ring while enabled. The panel's rendering itself is trivial text, so the `B`/reactive-theme gate is the real cost control; measured CPU/allocation/callback-duration baselines remain the existing P1 item. `dotnet build Yacplayer.sln -c Release --no-restore` and `dotnet test Yacplayer.sln -c Release --no-build` were re-run as the handoff gate and remained at 0 warnings/0 errors and 69/69.
 
