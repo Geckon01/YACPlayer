@@ -35,6 +35,22 @@ public class ReactiveThemeTests
     }
 
     [Fact]
+    public void ReactiveRgbQuantizationSuppressesImperceptibleColorDrift()
+    {
+        var first = ReactiveThemeController.FromHsl(118, 0.82, 0.42000);
+        var almostIdentical = ReactiveThemeController.FromHsl(118, 0.82, 0.42001);
+        var background = ReactiveThemeController.BackgroundFromHsl(118, 0.82, 0.42000);
+
+        Assert.Equal(first, almostIdentical);
+        Assert.True(first.R % 4 == 0 || first.R == byte.MaxValue);
+        Assert.True(first.G % 4 == 0 || first.G == byte.MaxValue);
+        Assert.True(first.B % 4 == 0 || first.B == byte.MaxValue);
+        Assert.True(background.R % 4 == 0 || background.R == byte.MaxValue);
+        Assert.True(background.G % 4 == 0 || background.G == byte.MaxValue);
+        Assert.True(background.B % 4 == 0 || background.B == byte.MaxValue);
+    }
+
+    [Fact]
     public void BassPulseRisesWithAttackAndFallsBackToStaticAfterRelease()
     {
         // timeScale 1000 compresses the envelope: 80 ms frame * 1000 = 80 s of smoothing.
@@ -261,7 +277,7 @@ public class ReactiveThemeTests
             ReactiveTheme: theme)).Diff(null);
         var expected = ReactiveThemeController.VersionColor(theme.VersionHue, theme.VersionGlow);
         Assert.Contains($"\u001b[38;2;{expected.R};{expected.G};{expected.B}m", output);
-        Assert.Contains("v1.26.5.11", output);
+        Assert.Contains("v1.26.15.11", output);
     }
 
     [Fact]

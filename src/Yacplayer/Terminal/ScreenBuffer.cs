@@ -69,7 +69,9 @@ public sealed class ScreenBuffer
         var sameSize = previous is not null && previous.Width == Width && previous.Height == Height;
         for (var y = 0; y < Height; y++)
         {
-            var repaintWholeRow = sameSize && (_variableWidthRows[y] || previous!._variableWidthRows[y]);
+            var repaintWholeRow = sameSize
+                && (_variableWidthRows[y] || previous!._variableWidthRows[y])
+                && !RowEquals(previous!, y);
             if (repaintWholeRow)
             {
                 output.Append("\u001b[0m");
@@ -103,6 +105,12 @@ public sealed class ScreenBuffer
     }
 
     private static bool SameStyle(Cell left, Cell right) => left.Color == right.Color && left.Background == right.Background && left.Bold == right.Bold;
+
+    private bool RowEquals(ScreenBuffer other, int y)
+    {
+        var offset = y * Width;
+        return _cells.AsSpan(offset, Width).SequenceEqual(other._cells.AsSpan(offset, Width));
+    }
 
     private static bool MayUseVariableDisplayWidth(char value)
     {

@@ -183,7 +183,7 @@ dotnet test Yacplayer.sln -c Release
 
 GitHub Actions runs the same restore, Release build, and test sequence on Windows for every push and pull request.
 
-The current suite contains 71 device-independent unit tests covering CLI parsing, four-part assembly versioning, playlist behavior and restored repeat/shuffle state including single-track Repeat All, batch insertion during an active shuffle cycle, bounded audio-event delivery, list viewport scrolling/clamping, ring-buffer wrapping/latest/exact reads under concurrent producer/consumer stress, independently gated pre-volume PCM tapping, realtime level/spectrum/density/tempo analysis including partial FFT accumulation, offline track-energy maps with the drama lift window, the reactive theme envelopes, instrumentation gating, bar kick, and header status rendering, player/browser/settings layout rendering, settings interaction and persistence, browser-controller deduplication, ANSI/true-color diff styles, batching and Unicode-row refresh, FFT reconfiguration, metadata fallback, and cancellable browser filtering/sorting.
+The current suite contains 73 device-independent unit tests covering CLI parsing, four-part assembly versioning, playlist behavior and restored repeat/shuffle state including single-track Repeat All, batch insertion during an active shuffle cycle, bounded audio-event delivery, list viewport scrolling/clamping, ring-buffer wrapping/latest/exact reads under concurrent producer/consumer stress, independently gated pre-volume PCM tapping, realtime level/spectrum/density/tempo analysis including partial FFT accumulation, offline track-energy maps with the drama lift window, the reactive theme envelopes, instrumentation gating, bar kick, and header status rendering, player/browser/settings layout rendering, settings interaction and persistence, browser-controller deduplication, ANSI/true-color diff styles, batching, synchronized frame output, and Unicode-row refresh, FFT reconfiguration, metadata fallback, and cancellable browser filtering/sorting.
 
 Framework-dependent win-x64 publish:
 
@@ -218,7 +218,7 @@ Build the Inno Setup 6 installer:
 & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\Yacplayer.iss
 ```
 
-Output: `artifacts\installer\Yacplayer-1.26.5.11-win-x64-setup.exe`.
+Output: `artifacts\installer\Yacplayer-1.26.15.11-win-x64-setup.exe`.
 
 ## Repository layout
 

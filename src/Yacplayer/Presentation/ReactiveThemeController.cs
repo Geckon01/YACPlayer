@@ -35,6 +35,7 @@ internal sealed class ReactiveThemeController
     private const long UpdateIntervalMs = 80;
 
     private const double GoldenAngle = 137.508;
+    private const int RgbQuantum = 4;
 
     // Arrangement-driven amplitude scaling: quiet sections respond at 40% of
     // the base amplitude, climaxes at 160%, smoothed over seconds so section
@@ -303,18 +304,29 @@ internal sealed class ReactiveThemeController
     {
         var (r, g, b) = HslToChannels(hue, saturation, lightness);
         return CellColor.Rgb(
-            (int)Math.Round(r * 255),
-            (int)Math.Round(g * 255),
-            (int)Math.Round(b * 255));
+            QuantizeChannel(r),
+            QuantizeChannel(g),
+            QuantizeChannel(b));
     }
 
     internal static CellBackground BackgroundFromHsl(double hue, double saturation, double lightness)
     {
         var (r, g, b) = HslToChannels(hue, saturation, lightness);
         return CellBackground.Rgb(
-            (int)Math.Round(r * 255),
-            (int)Math.Round(g * 255),
-            (int)Math.Round(b * 255));
+            QuantizeChannel(r),
+            QuantizeChannel(g),
+            QuantizeChannel(b));
+    }
+
+    // Four-channel-value buckets are visually continuous at the existing 12.5 FPS
+    // color cadence, but suppress ANSI rewrites for imperceptible one-value drift.
+    private static int QuantizeChannel(double normalized)
+    {
+        var channel = (int)Math.Round(normalized * 255);
+        return Math.Clamp(
+            (int)Math.Round(channel / (double)RgbQuantum) * RgbQuantum,
+            0,
+            255);
     }
 
     private static (double R, double G, double B) HslToChannels(double hue, double saturation, double lightness)

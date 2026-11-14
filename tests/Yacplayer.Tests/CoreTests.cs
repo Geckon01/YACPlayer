@@ -8,7 +8,7 @@ namespace Yacplayer.Tests;
 public class CoreTests
 {
     [Fact] public void CliRejectsUnknownAndBadFps() { Assert.False(Arguments.Parse(["--wat"]).IsValid); Assert.False(Arguments.Parse(["--fps", "42"]).IsValid); Assert.True(Arguments.Parse(["--help"]).Help); }
-    [Fact] public void AssemblyUsesFourPartReleaseVersion() { Assert.Equal(new Version(1, 26, 5, 11), typeof(Yacplayer.App).Assembly.GetName().Version); Assert.Contains("1.26.5.11", Arguments.HelpText); }
+    [Fact] public void AssemblyUsesFourPartReleaseVersion() { Assert.Equal(new Version(1, 26, 15, 11), typeof(Yacplayer.App).Assembly.GetName().Version); Assert.Contains("1.26.15.11", Arguments.HelpText); }
     [Fact] public void PlaylistRepeatAndRemovalAreSafe() { var p = new Playlist(1); Assert.Null(p.Next()); p.Add(new("a")); p.Add(new("b")); Assert.Equal("a", p.Next()!.Path); Assert.Equal("b", p.Next()!.Path); Assert.Null(p.Next(true)); p.SetRepeat(RepeatMode.All); Assert.Equal("a", p.Next(true)!.Path); p.Remove(0); Assert.Single(p.Items); }
     [Fact] public void ShuffleDoesNotRepeatWithinCycle() { var p = new Playlist(2); p.AddRange(Enumerable.Range(0, 5).Select(i => new TrackEntry(i.ToString()))); p.ToggleShuffle(); var paths = Enumerable.Range(0, 5).Select(_ => p.Next()!.Path).ToArray(); Assert.Equal(5, paths.Distinct().Count()); }
     [Fact]
@@ -75,7 +75,33 @@ public class CoreTests
     [Fact] public void ScreenDiffEmitsColorAndDetectsColorOnlyChange() { var a = new ScreenBuffer(1, 1); a.Write(0, 0, "█", CellColor.Green); Assert.Contains("\u001b[32m", a.Diff(null)); var b = new ScreenBuffer(1, 1); b.Write(0, 0, "█", CellColor.Red); var diff = b.Diff(a); Assert.Contains("\u001b[31m", diff); Assert.Contains("█", diff); }
     [Fact] public void ScreenDiffEmitsTrueColorForeground() { var screen = new ScreenBuffer(1, 1); screen.Write(0, 0, "█", CellColor.Rgb(12, 34, 56)); Assert.Contains("\u001b[38;2;12;34;56m", screen.Diff(null)); }
     [Fact] public void ScreenDiffBatchesAdjacentCells() { var screen = new ScreenBuffer(8, 1); screen.Write(0, 0, "████████", CellColor.Green); var diff = screen.Diff(null); Assert.Equal(1, diff.Split("\u001b[1;", StringSplitOptions.None).Length - 1); }
-    [Fact] public void ScreenDiffRepaintsRowsThatContainVariableWidthUnicode() { var previous = new ScreenBuffer(8, 1); previous.Write(0, 0, "曲"); var current = new ScreenBuffer(8, 1); current.Write(0, 0, "曲"); var diff = current.Diff(previous); Assert.Contains("\u001b[2K", diff); Assert.Contains("曲", diff); var plainPrevious = new ScreenBuffer(8, 1); plainPrevious.Write(0, 0, "████"); var plainCurrent = new ScreenBuffer(8, 1); plainCurrent.Write(0, 0, "████"); Assert.Equal("", plainCurrent.Diff(plainPrevious)); var cleared = new ScreenBuffer(8, 1); Assert.Contains("\u001b[2K", cleared.Diff(current)); }
+    [Fact]
+    public void ScreenDiffRepaintsOnlyChangedRowsThatContainVariableWidthUnicode()
+    {
+        var previous = new ScreenBuffer(8, 1);
+        previous.Write(0, 0, "曲");
+        var unchanged = new ScreenBuffer(8, 1);
+        unchanged.Write(0, 0, "曲");
+        Assert.Equal("", unchanged.Diff(previous));
+
+        var changed = new ScreenBuffer(8, 1);
+        changed.Write(0, 0, "曲目");
+        var changedDiff = changed.Diff(previous);
+        Assert.Contains("\u001b[2K", changedDiff);
+        Assert.Contains("曲目", changedDiff);
+
+        var cleared = new ScreenBuffer(8, 1);
+        Assert.Contains("\u001b[2K", cleared.Diff(changed));
+    }
+
+    [Fact]
+    public void TerminalFramesUseSynchronizedOutputAndSkipEmptyDiffs()
+    {
+        Assert.Equal("", TerminalSession.WrapSynchronized(""));
+        Assert.Equal(
+            "\u001b[?2026hframe\u001b[?2026l",
+            TerminalSession.WrapSynchronized("frame"));
+    }
     [Fact] public void ListViewportKeepsTargetVisibleWithMargin() { var viewport = new ListViewport(); viewport.EnsureVisible(50, 100, 10); Assert.Equal(42, viewport.Offset); viewport.EnsureVisible(43, 100, 10); Assert.Equal(42, viewport.Offset); viewport.EnsureVisible(10, 100, 10); Assert.Equal(9, viewport.Offset); }
     [Fact] public void ListViewportClampsAfterCollectionOrWindowChanges() { var viewport = new ListViewport(); viewport.EnsureVisible(90, 100, 10); Assert.Equal(82, viewport.Offset); viewport.EnsureVisible(2, 3, 20); Assert.Equal(0, viewport.Offset); viewport.EnsureVisible(0, 0, 10); Assert.Equal(0, viewport.Offset); }
     [Fact]

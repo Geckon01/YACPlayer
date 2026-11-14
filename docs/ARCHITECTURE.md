@@ -4,7 +4,7 @@
 
 ## 1. Purpose and scope
 
-This document describes the architecture that is actually implemented in Yacplayer 1.26.5.11: components, data flow, execution contexts, state, resource ownership, build/release flow, known limitations, and extension points. It is not an aspirational feature list; gaps between the implementation and the intended design are listed explicitly under “Limitations and technical debt.”
+This document describes the architecture that is actually implemented in Yacplayer 1.26.15.11: components, data flow, execution contexts, state, resource ownership, build/release flow, known limitations, and extension points. It is not an aspirational feature list; gaps between the implementation and the intended design are listed explicitly under “Limitations and technical debt.”
 
 The target is Windows x64, `.NET 10`, and `net10.0-windows`. The application ships as one managed executable with framework-dependent DLLs and an optional Inno Setup installer.
 
@@ -306,7 +306,7 @@ Current caveat: the last valid spectrum is retained without elapsed-time decay w
 
 ### Terminal session
 
-Interactive construction enters the alternate screen, disables automatic line wrapping, hides the cursor, and clears the screen. Disposal resets SGR, restores line wrapping and the cursor, and returns to the primary screen. Redirected stdout produces no terminal-control output.
+Interactive construction enters the alternate screen, disables automatic line wrapping, hides the cursor, and clears the screen. Each non-empty frame diff is bracketed with synchronized-update mode (`CSI ?2026h` / `CSI ?2026l`) so a supporting terminal presents the style-heavy reactive update as one visual transaction; an unsupported private mode is ignored by normal VT behavior. Empty diffs are not written or flushed. Disposal first ends any synchronized update, then resets SGR, restores line wrapping and the cursor, and returns to the primary screen. Redirected stdout produces no terminal-control output.
 
 ### Cell model
 
@@ -316,7 +316,7 @@ One `char` is still assumed to occupy one terminal column. Grapheme clusters, su
 
 ### Differential rendering
 
-`Diff(previous)` skips equal cells and combines adjacent changed cells with identical style into horizontal runs. Each run receives one cursor-position escape and only necessary SGR changes. A row containing likely variable-width Unicode in either the current or previous frame is erased and repainted completely to remove orphaned terminal glyphs. Resizing changes buffer dimensions and forces a full redraw.
+`Diff(previous)` skips equal cells and combines adjacent changed cells with identical style into horizontal runs. Each run receives one cursor-position escape and only necessary SGR changes. A changed row containing likely variable-width Unicode in either the current or previous frame is erased and repainted completely to remove orphaned terminal glyphs; an identical marked row now emits nothing instead of being erased at every FPS tick. Resizing changes buffer dimensions and forces a full redraw.
 
 Current caveat: a new `ScreenBuffer`, cell array, `StringBuilder`, and ANSI string are created for every frame. Reusable double buffers and pooled output are the main GC optimization opportunity.
 
@@ -330,6 +330,8 @@ Current caveat: a new `ScreenBuffer`, cell array, `StringBuilder`, and ANSI stri
 ### Music-reactive UI theme
 
 `ReactiveThemeController` (UI loop only) converts smoothed music features into a bounded color scheme for panel borders, green panel-title backgrounds, the active queue-row background, the footer, the spectrum bars (the reactive gradient keeps the static ramp's green-to-warm shape rotated to the theme hue and brightened by the bass pulse; the bar-top marker follows the theme instead of static yellow), the progress-bar fill, and the waveform dots. Bass energy drives a brightness pulse (single-pole attack ≈ 50 ms, release 280–380 ms, bounded to roughly the 18–28% luminance amplitude depending on mode), spectral centroid maps logarithmically to a bounded yellow-green-to-cyan hue band (not the full wheel) with a 1.6–2.2 s time constant, and RMS modulates saturation around the static green. When the theme is enabled, `TrackEnergyMapLoader` also scans the current track offline — `TrackEnergyScanner` decodes it through a separate `AudioFileReader` on the thread pool into per-second RMS blocks — and the controller derives a `drama` factor from the map: the loudness lift against the preceding ten-second window plus a capped (0.6x) anticipation of a louder upcoming ten-second window, blended with the track-relative intensity and smoothed with a 3 s attack / 8 s release so the run-up builds and a long chorus holds its peak. The first sample of a new map binds instantly to the section level instead of flashing from a default, and turning the theme Off resets the drama state. A normalized `SpectralDensity` feature (spectral entropy over 16 log bands of the metrics FFT, loudness-independent, trailing and defaulted in `RealtimeAudioSnapshot`) adds an instrumentation axis smoothed with a 1 s attack / 2.5 s release: the pulse amplitude is multiplied by `0.45 + 0.55 * density` and the saturation target by `0.75 + 0.25 * density`, so a lone voice or guitar between choruses stays subdued even when loud while a full arrangement reaches full reaction. During meaty moments (warmed `bass * density >= 0.55`) each predicted beat raises a `BarKick` that decays in ~250 ms and brightens the reactive spectrum bars and marker, making the spectrum blink in rhythm. Drama scales the pulse amplitude (0.4x..1.6x), saturation, and hue speed, so quiet sections stay calm and choruses reach full amplitude while the transition itself glides. Without a map (Off or scan failure) all scales are exactly 1. Updates are gated to about 12.5 FPS independent of the UI/FFT rate. When `ReactiveUiMode` is `Off` (the default) the controller no-ops and the renderer keeps its static ANSI theme; when playback is not playing or features are unavailable, parameters glide back to the base theme through the release path rather than snapping. Colors are emitted as RGB true-color SGR sequences (the spectrum already requires true color); terminals without true-color support see the same sequences and may downgrade them, which matches the existing spectrum behavior. No geometry, layout, informational text, or semantically meaningful colors change.
+
+Reactive HSL conversion quantizes each RGB channel to 4/255 buckets. The 12.5 FPS envelopes remain visually smooth, while one-value channel drift no longer forces broad border/background ANSI rewrites.
 
 ## 14. Input routing
 

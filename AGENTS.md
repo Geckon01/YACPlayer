@@ -21,7 +21,7 @@ Do not remove or weaken this contract. Its purpose is to let a new agent underst
 
 ## Project snapshot
 
-- Product: Yacplayer 1.26.5.11, a keyboard-operated full-screen terminal music player.
+- Product: Yacplayer 1.26.15.11, a keyboard-operated full-screen terminal music player.
 - Current supported runtime: Windows x64 only.
 - Framework: .NET 10, `net10.0-windows`, nullable reference types enabled.
 - Audio: NAudio 3.3.0, `AudioFileReader`, and WASAPI shared mode with requested 100 ms latency.
@@ -31,7 +31,7 @@ Do not remove or weaken this contract. Its purpose is to let a new agent underst
 - Metadata: ATL 7.19.0, loaded lazily for the current track only.
 - Persistence: per-user JSON at `%LOCALAPPDATA%\Yacplayer\settings.json`.
 - Distribution: framework-dependent win-x64 publish, optional win-x64 Native AOT publish, an Inno Setup 6 installer, and a self-contained x64 MSIX build for Microsoft Store.
-- Automated tests: 71 xUnit tests that avoid real audio hardware.
+- Automated tests: 73 xUnit tests that avoid real audio hardware.
 - License: MIT. The repository and user-facing documentation carry an AI-assisted/generated-code notice.
 - Public documentation is English-first with Russian counterparts.
 
@@ -72,7 +72,7 @@ Do not remove or weaken this contract. Its purpose is to let a new agent underst
 ### Terminal UI
 
 - `TerminalSession` enters the alternate screen, hides the cursor, and restores terminal state on normal disposal.
-- Every frame is first composed into a styled `ScreenBuffer`; `Diff` emits only changed runs with ANSI cursor/style sequences, except rows with likely variable-width Unicode, which are erased and fully repainted.
+- Every frame is first composed into a styled `ScreenBuffer`; `Diff` emits only changed runs with ANSI cursor/style sequences. Changed rows with likely variable-width Unicode are erased and fully repainted, while identical Unicode rows produce no output. Non-empty diffs are bracketed with synchronized-update escapes and empty diffs are not flushed, preventing reactive RGB updates from exposing partially drawn black strips on supporting terminals.
 - The wide layout contains header, Now Playing, Queue, visualizer, Playback, and Audio Info panels. Compact terminals receive a reduced layout.
 - Green panel-title backgrounds use white bold text while their borders remain bright green.
 - The top-right header shows the running assembly version as `vA.B.C.D` and hides it only when the terminal is too narrow.
@@ -83,6 +83,7 @@ Do not remove or weaken this contract. Its purpose is to let a new agent underst
 - The waveform draws a normalized min/max envelope with green `.` characters. The dot glyph is the current intentional design.
 - `B` toggles the persisted Realtime Audio panel in sufficiently wide layouts. When off, the secondary tap stops writing (unless the reactive UI needs it) and the level/spectral/tempo analyzer is not invoked.
 - `T` cycles the persisted music-reactive UI theme Off → Subtle → Visualizer. `Off` (the default, preserving existing installs' appearance) renders the static theme and performs no extra work. Subtle/Visualizer smoothly shift panel borders, panel-title backgrounds, the active queue-row background, the footer color, the spectrum bar gradient/marker (same green-to-warm ramp shape rotated to the theme hue and brightened by the bass pulse), the progress bar, and the waveform dots from smoothed bass energy (brightness pulse, 18%/28% lightness amplitude for Subtle/Visualizer), spectral centroid (bounded yellow-green to cyan hue range), and RMS (saturation), updated at roughly 12.5 FPS through `ReactiveThemeController` and rendered via RGB true-color backgrounds. When the reactive theme is on, the current track is additionally scanned offline (independent decoder on the thread pool) into a one-second-block `TrackEnergyMap`; a drama factor from the loudness lift against the preceding ten seconds and a capped (0.6) anticipation of a louder upcoming ten seconds, smoothed with a 3 s attack / 8 s release, scales the pulse amplitude (0.4x quiet to 1.6x climax), saturation, and hue speed, so quiet sections stay calm, the run-up to a section builds, and choruses push the interface to full amplitude. A normalized `SpectralDensity` feature (spectral entropy over 16 log bands of the metrics FFT, loudness-independent) adds an instrumentation axis: a single timbral source (voice, bass, lone guitar) keeps the response subdued even when loud, while a growing arrangement restores the full amplitude. During meaty moments (sustained bass x density above 0.55) the spectrum bars blink brighter on each predicted beat through a ~250 ms exponential `BarKick` decay. Paused/stopped/no-audio states glide back to the static theme.
+- Reactive RGB channels are quantized to 4/255 steps, preserving smooth motion while suppressing imperceptible one-value ANSI rewrites.
 - `O` opens a full-screen settings menu containing every persisted JSON option. Successful changes apply and save immediately; folder paths are edited inline and must resolve to existing directories.
 - `Q` opens a modal `Yep` / `Nope` exit confirmation over every application view, except while a settings path is being edited. `Nope` is selected by default; arrows/Tab change the choice, Enter accepts it, Esc/N cancels, and Y confirms exit. Ctrl+C remains an immediate cancellation path.
 - The Realtime Audio `Beat` row renders the predictive pulse as an ASCII cat: `=^o.o^=` on the beat and `=^-.-^=` between beats.
@@ -289,7 +290,7 @@ Do not claim Linux/macOS support based on compilation alone.
 
 ## Git and repository hygiene
 
-- Release versions use exactly four numeric components in `A.B.C.D` form. Date-derived releases follow `1.YY.DD.MM`; the current version for 2026-11-05 is `1.26.5.11`. Every Store update must compare greater than the previously published MSIX version. Synchronize project/assembly metadata, CLI help, installer, MSIX defaults/template, and EN/RU documentation whenever the version changes.
+- Release versions use exactly four numeric components in `A.B.C.D` form. Date-derived releases follow `1.YY.DD.MM`; the current version for 2026-11-15 is `1.26.15.11`. Every Store update must compare greater than the previously published MSIX version. Synchronize project/assembly metadata, CLI help, installer, MSIX defaults/template, and EN/RU documentation whenever the version changes.
 
 - Remotes: `github` is `git@github.com:Geckon01/YACPlayer.git`; `origin` is the private Gitea server at `https://git.geckon01.ru/geckon01/YacPlayer.git`.
 - On 2026-11-03, history on both remotes was rewritten to remove accidentally committed copyrighted test audio. Do not merge or push an old clone/branch based on the pre-rewrite history; rebase onto the sanitized `main` or reclone.
@@ -305,6 +306,10 @@ Local-only caution at the time of this update: `yacplayer-history-backup-2026110
 ## Current verification record
 
 Update this section after every material change.
+
+- GitHub release build prepared on 2026-11-15 as `1.26.15.11`: project/assembly metadata, CLI help, installer, MSIX defaults, tests, and EN/RU documentation were synchronized to the date-derived version. `dotnet restore Yacplayer.sln` completed with `NU1900` because NuGet vulnerability metadata remained unreachable even after an unrestricted retry; `dotnet build Yacplayer.sln -c Release --no-restore` succeeded with 0 errors and the same two `NU1900` warnings, and `dotnet test Yacplayer.sln -c Release --no-build` passed 73/73 tests. Both the framework-dependent and Native AOT executables report `Yacplayer 1.26.15.11`. The tracked framework-dependent publish was refreshed, Native AOT produced `artifacts/publish-aot/Yacplayer.exe` (9,512,448 bytes, SHA-256 `F92EA38AB1752F0489E213410F721103F0AFCEE95EAF2493FED59705C9A72025`), and Inno Setup 6.7.1 produced `artifacts/installer/Yacplayer-1.26.15.11-win-x64-setup.exe` (3,265,024 bytes, SHA-256 `13E64EEFCABC11A51BD69760C5BD8042E2DB23E75FABF383C9BCB6681F28E8FF`). MSIX and manual installation/WASAPI/TUI smoke checks were not run because this build targets the GitHub release rather than the Store submission path.
+
+- Reactive terminal flicker mitigation added on 2026-11-11: every non-empty ANSI diff is now bracketed with synchronized-update mode (`CSI ?2026h` / `CSI ?2026l`) and empty diffs are not written or flushed, preventing supporting terminals from presenting partially applied RGB-heavy reactive frames. Rows marked for likely variable-width Unicode are erased/repainted only when their logical cells changed, rather than at every FPS tick. Reactive HSL conversion quantizes RGB channels in 4/255 steps, suppressing imperceptible one-value style churn while retaining the existing 12.5 FPS envelopes and color range. Added regressions for synchronized framing/empty suppression, unchanged-versus-changed Unicode rows, and RGB quantization. Focused terminal/reactive tests passed 43/43; `dotnet build Yacplayer.sln -c Release --no-restore` succeeded with 0 warnings/0 errors and `dotnet test Yacplayer.sln -c Release --no-build` passed 73/73 tests. Real Windows Terminal playback with reactive UI and mixed-width filenames remains manually unverified; no binary artifacts were rebuilt.
 
 - Reactive UI header status added on 2026-11-11: the second header row now shows `UI: Off|Subtle|Visualizer` from the persisted `ReactiveUiMode` between the shuffle and output fields, so the current theme mode is visible without opening the settings menu or watching the transient `T` message; the row remains truncated to the terminal width by the existing `Fit` clamp. Added a renderer regression asserting `UI: Off` with default settings and `UI: Visualizer` with the mode set, with the wrong label absent. `dotnet build Yacplayer.sln -c Release --no-restore` succeeded with 0 warnings/0 errors and `dotnet test Yacplayer.sln -c Release --no-build` passed 71/71 tests. Appearance at narrow terminal widths (where the tail including the new field truncates) remains manually unverified; no binary artifacts were rebuilt.
 

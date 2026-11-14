@@ -183,7 +183,7 @@ dotnet test Yacplayer.sln -c Release
 
 GitHub Actions выполняет ту же последовательность restore, Release-сборки и тестов на Windows для каждого push и pull request.
 
-Текущий набор содержит 71 unit-тест без требования аудиоустройства: CLI, четырёхкомпонентная assembly version, playlist и восстановление repeat/shuffle, включая single-track Repeat All, batch insert внутри активного shuffle-cycle, bounded audio-event delivery, прокрутка/clamp list viewport, ring buffer wrapping/latest/exact reads под конкурентным стрессом producer/consumer, независимо отключаемый pre-volume PCM tap, realtime level/spectrum/density/tempo analysis с накоплением неполных FFT-окон, офлайн карты энергии трека с окном drama-lift, огибающие реактивной темы, гейтинг инструментовки, bar kick и рендеринг статуса в шапке, рендеринг player/browser/settings, взаимодействие с настройками и их сохранение, дедупликация в browser controller, ANSI/true-color diff styles, batching и обновление Unicode-строк, перенастройка FFT, metadata fallback и отменяемая browser filtering/sorting.
+Текущий набор содержит 73 unit-теста без требования аудиоустройства: CLI, четырёхкомпонентная assembly version, playlist и восстановление repeat/shuffle, включая single-track Repeat All, batch insert внутри активного shuffle-cycle, bounded audio-event delivery, прокрутка/clamp list viewport, ring buffer wrapping/latest/exact reads под конкурентным стрессом producer/consumer, независимо отключаемый pre-volume PCM tap, realtime level/spectrum/density/tempo analysis с накоплением неполных FFT-окон, офлайн карты энергии трека с окном drama-lift, огибающие реактивной темы, гейтинг инструментовки, bar kick и рендеринг статуса в шапке, рендеринг player/browser/settings, взаимодействие с настройками и их сохранение, дедупликация в browser controller, ANSI/true-color diff styles, batching, synchronized frame output и обновление Unicode-строк, перенастройка FFT, metadata fallback и отменяемая browser filtering/sorting.
 
 Публикация framework-dependent win-x64:
 
@@ -218,7 +218,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File packaging\msix\Build-Msix.ps
 & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\Yacplayer.iss
 ```
 
-Результат: `artifacts\installer\Yacplayer-1.26.5.11-win-x64-setup.exe`.
+Результат: `artifacts\installer\Yacplayer-1.26.15.11-win-x64-setup.exe`.
 
 ## Структура репозитория
 
